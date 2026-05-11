@@ -46,6 +46,48 @@ func TestVNetSubnetLifecycle(t *testing.T) {
 	expectStatus(t, resp, 404)
 }
 
+func TestVNetPrivateEndpointVNetPoliciesRoundTrip(t *testing.T) {
+	ts := setupServer()
+	defer ts.Close()
+	base := ts.URL + "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Network/virtualNetworks"
+	av := "?api-version=2023-09-01"
+
+	// Default: omitted on PUT -> "Disabled" on GET (matches real ARM and azurerm v4 default).
+	resp := doRequest(t, "PUT", base+"/vnet1"+av,
+		`{"location":"eastus","properties":{"addressSpace":{"addressPrefixes":["10.0.0.0/16"]}}}`)
+	resp.Body.Close()
+	expectStatus(t, resp, 201)
+
+	resp = doRequest(t, "GET", base+"/vnet1"+av, "")
+	expectStatus(t, resp, 200)
+	m := decodeJSON(t, resp)
+	resp.Body.Close()
+	props := m["properties"].(map[string]interface{})
+	if got := props["privateEndpointVNetPolicies"]; got != "Disabled" {
+		t.Fatalf("expected default privateEndpointVNetPolicies=Disabled, got %v", got)
+	}
+
+	// Explicit "Basic" must round-trip through PUT and GET.
+	resp = doRequest(t, "PUT", base+"/vnet2"+av,
+		`{"location":"eastus","properties":{"addressSpace":{"addressPrefixes":["10.1.0.0/16"]},"privateEndpointVNetPolicies":"Basic"}}`)
+	expectStatus(t, resp, 201)
+	m = decodeJSON(t, resp)
+	resp.Body.Close()
+	props = m["properties"].(map[string]interface{})
+	if got := props["privateEndpointVNetPolicies"]; got != "Basic" {
+		t.Fatalf("expected PUT response privateEndpointVNetPolicies=Basic, got %v", got)
+	}
+
+	resp = doRequest(t, "GET", base+"/vnet2"+av, "")
+	expectStatus(t, resp, 200)
+	m = decodeJSON(t, resp)
+	resp.Body.Close()
+	props = m["properties"].(map[string]interface{})
+	if got := props["privateEndpointVNetPolicies"]; got != "Basic" {
+		t.Fatalf("expected GET response privateEndpointVNetPolicies=Basic, got %v", got)
+	}
+}
+
 func TestSubnetOnNonexistentVNet(t *testing.T) {
 	ts := setupServer()
 	defer ts.Close()
