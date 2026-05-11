@@ -42,8 +42,6 @@ func (h *Handler) Register(r chi.Router) {
 			r.Get("/resources", h.ListResources)
 		})
 	})
-	// Case-sensitive duplicate (Azure ARM is case-insensitive on 'resourceGroups')
-	r.Get("/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/resources", h.ListResources)
 	// Async operation status polling endpoint
 	r.Get("/subscriptions/{subscriptionId}/operationresults/*", h.OperationResult)
 }
