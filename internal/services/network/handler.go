@@ -112,33 +112,32 @@ func buildVNetResponse(sub, rg, name string, input map[string]interface{}) map[s
 		tags = map[string]interface{}{}
 	}
 
-	// privateEndpointVNetPolicies: round-trip the value provided on PUT,
-	// defaulting to "Disabled" when absent. Real Azure ARM always echoes
-	// this field on GET; without it Terraform azurerm v4 reports a
-	// permanent phantom diff for virtualNetworks.
-	privateEndpointVNetPolicies, _ := props["privateEndpointVNetPolicies"].(string)
-	if privateEndpointVNetPolicies != "Basic" {
-		privateEndpointVNetPolicies = "Disabled"
+	respProps := map[string]interface{}{
+		"provisioningState":      "Succeeded",
+		"resourceGuid":           uuid.New().String(),
+		"addressSpace":           addrSpace,
+		"dhcpOptions":            map[string]interface{}{"dnsServers": []interface{}{}},
+		"subnets":                []interface{}{},
+		"virtualNetworkPeerings": []interface{}{},
+		"enableDdosProtection":   false,
+		"enableVmProtection":     false,
+	}
+
+	// privateEndpointVNetPolicies: only echo when the caller actually set it
+	// on PUT, so GET reflects exactly what was written. Without this echo,
+	// Terraform azurerm v4 reports a permanent phantom diff for the field.
+	if v, ok := props["privateEndpointVNetPolicies"]; ok {
+		respProps["privateEndpointVNetPolicies"] = v
 	}
 
 	return map[string]interface{}{
-		"id":       id,
-		"name":     name,
-		"type":     "Microsoft.Network/virtualNetworks",
-		"location": location,
-		"tags":     tags,
-		"etag":     "W/\"miniblue\"",
-		"properties": map[string]interface{}{
-			"provisioningState":           "Succeeded",
-			"resourceGuid":                uuid.New().String(),
-			"addressSpace":                addrSpace,
-			"dhcpOptions":                 map[string]interface{}{"dnsServers": []interface{}{}},
-			"subnets":                     []interface{}{},
-			"virtualNetworkPeerings":      []interface{}{},
-			"enableDdosProtection":        false,
-			"enableVmProtection":          false,
-			"privateEndpointVNetPolicies": privateEndpointVNetPolicies,
-		},
+		"id":         id,
+		"name":       name,
+		"type":       "Microsoft.Network/virtualNetworks",
+		"location":   location,
+		"tags":       tags,
+		"etag":       "W/\"miniblue\"",
+		"properties": respProps,
 	}
 }
 

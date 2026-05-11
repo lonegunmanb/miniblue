@@ -52,7 +52,7 @@ func TestVNetPrivateEndpointVNetPoliciesRoundTrip(t *testing.T) {
 	base := ts.URL + "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Network/virtualNetworks"
 	av := "?api-version=2023-09-01"
 
-	// Default: omitted on PUT -> "Disabled" on GET (matches real ARM and azurerm v4 default).
+	// Omitted on PUT -> omitted on GET (don't fabricate a value the caller never set).
 	resp := doRequest(t, "PUT", base+"/vnet1"+av,
 		`{"location":"eastus","properties":{"addressSpace":{"addressPrefixes":["10.0.0.0/16"]}}}`)
 	resp.Body.Close()
@@ -63,8 +63,8 @@ func TestVNetPrivateEndpointVNetPoliciesRoundTrip(t *testing.T) {
 	m := decodeJSON(t, resp)
 	resp.Body.Close()
 	props := m["properties"].(map[string]interface{})
-	if got := props["privateEndpointVNetPolicies"]; got != "Disabled" {
-		t.Fatalf("expected default privateEndpointVNetPolicies=Disabled, got %v", got)
+	if _, present := props["privateEndpointVNetPolicies"]; present {
+		t.Fatalf("expected privateEndpointVNetPolicies absent when not set on PUT, got %v", props["privateEndpointVNetPolicies"])
 	}
 
 	// Explicit "Basic" must round-trip through PUT and GET.
