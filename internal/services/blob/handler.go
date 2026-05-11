@@ -28,11 +28,12 @@ type Blob struct {
 }
 
 type Handler struct {
-	store *store.Store
+	store  *store.Store
+	leases *leaseManager
 }
 
 func NewHandler(s *store.Store) *Handler {
-	return &Handler{store: s}
+	return &Handler{store: s, leases: newLeaseManager()}
 }
 
 func (h *Handler) Register(r chi.Router) {
@@ -47,6 +48,7 @@ func (h *Handler) Register(r chi.Router) {
 			r.Route("/{blobName}", func(r chi.Router) {
 				r.Put("/", h.UploadBlob)
 				r.Get("/", h.DownloadBlob)
+				r.Head("/", h.HeadBlob)
 				r.Delete("/", h.DeleteBlob)
 			})
 		})
@@ -238,6 +240,18 @@ func (h *Handler) UploadBlob(w http.ResponseWriter, r *http.Request) {
 	container := chi.URLParam(r, "containerName")
 	blobName := chi.URLParam(r, "blobName")
 
+	// Lease Blob: PUT {blob}?comp=lease.
+	if r.URL.Query().Get("comp") == "lease" {
+		h.handleLease(w, r)
+		return
+	}
+
+	// Enforce existing lease for Put Blob (overwrite of a leased blob).
+	if status, code, msg, ok := h.leases.checkAccess(account, container, blobName, r.Header.Get("x-ms-lease-id")); !ok {
+		writeBlobLeaseError(w, status, code, msg)
+		return
+	}
+
 	data, _ := io.ReadAll(r.Body)
 	ct := r.Header.Get("Content-Type")
 	if ct == "" {
@@ -254,7 +268,22 @@ func (h *Handler) UploadBlob(w http.ResponseWriter, r *http.Request) {
 		Content: data,
 	}
 	h.store.Set(h.blobKey(account, container, blobName), b)
+	w.Header().Set("ETag", b.Properties["etag"])
+	w.Header().Set("Last-Modified", time.Now().UTC().Format(http.TimeFormat))
+	w.Header().Set("x-ms-request-id", uuid.New().String())
 	w.WriteHeader(http.StatusCreated)
+}
+
+// applyLeaseHeaders writes the x-ms-lease-* headers on a Get/Head Blob
+// response so clients (including Terraform's azurerm backend) can observe the
+// real lease state.
+func (h *Handler) applyLeaseHeaders(w http.ResponseWriter, account, container, blob string) {
+	status, state, dur, _ := h.leases.snapshot(account, container, blob)
+	w.Header().Set("x-ms-lease-status", status)
+	w.Header().Set("x-ms-lease-state", state)
+	if dur != "" {
+		w.Header().Set("x-ms-lease-duration", dur)
+	}
 }
 
 func (h *Handler) DownloadBlob(w http.ResponseWriter, r *http.Request) {
@@ -271,13 +300,48 @@ func (h *Handler) DownloadBlob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", b.Properties["contentType"])
 	w.Header().Set("Content-Length", b.Properties["contentLength"])
 	w.Header().Set("ETag", b.Properties["etag"])
+	w.Header().Set("Last-Modified", time.Now().UTC().Format(http.TimeFormat))
+	w.Header().Set("x-ms-blob-type", "BlockBlob")
+	w.Header().Set("x-ms-request-id", uuid.New().String())
+	h.applyLeaseHeaders(w, account, container, blobName)
 	w.Write(b.Content)
+}
+
+// HeadBlob implements Get Blob Properties (HEAD on the blob). The Terraform
+// azurerm backend issues this before acquiring a lease in order to discover
+// the blob's etag and current lease state.
+func (h *Handler) HeadBlob(w http.ResponseWriter, r *http.Request) {
+	account := chi.URLParam(r, "accountName")
+	container := chi.URLParam(r, "containerName")
+	blobName := chi.URLParam(r, "blobName")
+
+	v, ok := h.store.Get(h.blobKey(account, container, blobName))
+	if !ok {
+		w.Header().Set("x-ms-error-code", "BlobNotFound")
+		w.Header().Set("x-ms-request-id", uuid.New().String())
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	b := v.(Blob)
+	w.Header().Set("Content-Type", b.Properties["contentType"])
+	w.Header().Set("Content-Length", b.Properties["contentLength"])
+	w.Header().Set("ETag", b.Properties["etag"])
+	w.Header().Set("Last-Modified", time.Now().UTC().Format(http.TimeFormat))
+	w.Header().Set("x-ms-blob-type", "BlockBlob")
+	w.Header().Set("x-ms-request-id", uuid.New().String())
+	h.applyLeaseHeaders(w, account, container, blobName)
+	w.WriteHeader(http.StatusOK)
 }
 
 func (h *Handler) DeleteBlob(w http.ResponseWriter, r *http.Request) {
 	account := chi.URLParam(r, "accountName")
 	container := chi.URLParam(r, "containerName")
 	blobName := chi.URLParam(r, "blobName")
+
+	if status, code, msg, ok := h.leases.checkAccess(account, container, blobName, r.Header.Get("x-ms-lease-id")); !ok {
+		writeBlobLeaseError(w, status, code, msg)
+		return
+	}
 	h.store.Delete(h.blobKey(account, container, blobName))
 	w.WriteHeader(http.StatusAccepted)
 }
