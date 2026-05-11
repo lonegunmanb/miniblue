@@ -50,6 +50,7 @@ type Server struct {
 	store       *store.Store
 	services    []string
 	aksHandler  *aks.Handler
+	routeTrie   *routeTrie
 }
 
 func New() *Server {
@@ -59,11 +60,22 @@ func New() *Server {
 	}
 	s.setupMiddleware()
 	s.setupRoutes()
+	// Build the case-insensitive routing trie AFTER all routes are registered,
+	// then attach it via a final wrapper around the router. We can't put this
+	// in setupMiddleware() because the trie depends on the route list.
+	s.routeTrie = BuildRouteTrie(s.router)
+	s.router.NotFound(armNotFound)
+	s.router.MethodNotAllowed(armNotFound)
 	return s
 }
 
 func (s *Server) Handler() http.Handler {
-	return s.router
+	// CaseInsensitiveARM must wrap the router from the outside so it sees the
+	// raw URL the client sent and can rewrite it to the canonical case before
+	// chi's routing logic runs. Putting it inside chi.Use would still work for
+	// matching, but middleware composition order makes external wrapping the
+	// clearest contract.
+	return CaseInsensitiveARM(s.routeTrie)(s.router)
 }
 
 // SaveState persists the store to disk if file-based persistence is active.
