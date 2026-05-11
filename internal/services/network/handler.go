@@ -112,6 +112,15 @@ func buildVNetResponse(sub, rg, name string, input map[string]interface{}) map[s
 		tags = map[string]interface{}{}
 	}
 
+	// privateEndpointVNetPolicies: round-trip the value provided on PUT,
+	// defaulting to "Disabled" when absent. Real Azure ARM always echoes
+	// this field on GET; without it Terraform azurerm v4 reports a
+	// permanent phantom diff for virtualNetworks.
+	privateEndpointVNetPolicies, _ := props["privateEndpointVNetPolicies"].(string)
+	if privateEndpointVNetPolicies != "Basic" {
+		privateEndpointVNetPolicies = "Disabled"
+	}
+
 	return map[string]interface{}{
 		"id":       id,
 		"name":     name,
@@ -120,14 +129,15 @@ func buildVNetResponse(sub, rg, name string, input map[string]interface{}) map[s
 		"tags":     tags,
 		"etag":     "W/\"miniblue\"",
 		"properties": map[string]interface{}{
-			"provisioningState":      "Succeeded",
-			"resourceGuid":           uuid.New().String(),
-			"addressSpace":           addrSpace,
-			"dhcpOptions":            map[string]interface{}{"dnsServers": []interface{}{}},
-			"subnets":                []interface{}{},
-			"virtualNetworkPeerings": []interface{}{},
-			"enableDdosProtection":   false,
-			"enableVmProtection":     false,
+			"provisioningState":           "Succeeded",
+			"resourceGuid":                uuid.New().String(),
+			"addressSpace":                addrSpace,
+			"dhcpOptions":                 map[string]interface{}{"dnsServers": []interface{}{}},
+			"subnets":                     []interface{}{},
+			"virtualNetworkPeerings":      []interface{}{},
+			"enableDdosProtection":        false,
+			"enableVmProtection":          false,
+			"privateEndpointVNetPolicies": privateEndpointVNetPolicies,
 		},
 	}
 }
