@@ -356,6 +356,82 @@ func TestBlobDataPlaneSharedKeyRejectBadSignature(t *testing.T) {
 	expectStatus(t, resp, 403)
 }
 
+func TestBlobSharedKeyAuthDisabledByEnv(t *testing.T) {
+	t.Setenv("MINIBLUE_DISABLE_SHAREDKEY_AUTH", "1")
+	ts := setupServer()
+	defer ts.Close()
+	acct := "envbypassacct"
+	// Create via ARM (would normally enable SharedKey requirement).
+	doRequest(t, "PUT", blobARMBase(ts)+"/"+acct, `{}`).Body.Close()
+
+	// Unsigned data-plane request should now succeed.
+	u := ts.URL + "/blob/" + acct + "?comp=properties&restype=service"
+	resp, err := http.Get(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	expectStatus(t, resp, 200)
+}
+
+func TestBlobSharedKeyAuthDisabledByEnvBlobLease(t *testing.T) {
+	t.Setenv("MINIBLUE_DISABLE_SHAREDKEY_AUTH", "1")
+	ts := setupServer()
+	defer ts.Close()
+	acct := "envbypassleaseacct"
+	doRequest(t, "PUT", blobARMBase(ts)+"/"+acct, `{}`).Body.Close()
+
+	// Create container and blob via unsigned data-plane requests (allowed by env var).
+	cResp, err := http.NewRequest(http.MethodPut, ts.URL+"/blob/"+acct+"/c1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cr, err := http.DefaultClient.Do(cResp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cr.Body.Close()
+	expectStatus(t, cr, 201)
+
+	bReq, _ := http.NewRequest(http.MethodPut, ts.URL+"/blob/"+acct+"/c1/state.tfstate", strings.NewReader("hi"))
+	bReq.Header.Set("x-ms-blob-type", "BlockBlob")
+	br, err := http.DefaultClient.Do(bReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	br.Body.Close()
+	expectStatus(t, br, 201)
+
+	// Acquire a lease unsigned (the tutorial scenario from the issue).
+	lReq, _ := http.NewRequest(http.MethodPut, ts.URL+"/blob/"+acct+"/c1/state.tfstate?comp=lease", nil)
+	lReq.Header.Set("x-ms-lease-action", "acquire")
+	lReq.Header.Set("x-ms-lease-duration", "-1")
+	lReq.Header.Set("x-ms-proposed-lease-id", "11111111-1111-1111-1111-111111111111")
+	lr, err := http.DefaultClient.Do(lReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lr.Body.Close()
+	expectStatus(t, lr, 201)
+}
+
+func TestBlobSharedKeyAuthDisabledFalsyValue(t *testing.T) {
+	t.Setenv("MINIBLUE_DISABLE_SHAREDKEY_AUTH", "0")
+	ts := setupServer()
+	defer ts.Close()
+	acct := "falsybypassacct"
+	doRequest(t, "PUT", blobARMBase(ts)+"/"+acct, `{}`).Body.Close()
+
+	// Falsy env value: SharedKey enforcement still applies.
+	u := ts.URL + "/blob/" + acct + "?comp=properties&restype=service"
+	resp, err := http.Get(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	expectStatus(t, resp, 403)
+}
+
 func TestBlobServiceFilterStillRegistersStorageAccountARM(t *testing.T) {
 	t.Setenv("SERVICES", "blob")
 	srv := server.New()

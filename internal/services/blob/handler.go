@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -56,8 +57,28 @@ func (h *Handler) Register(r chi.Router) {
 	})
 }
 
+// envDisableSharedKeyAuth, when set to a truthy value (1, true, yes, on),
+// causes the blob data-plane SharedKey middleware to skip signature
+// verification entirely. This is intended for tutorials, smoke tests, and
+// other dev workflows where issuing a fully SharedKey-signed request from a
+// shell script would add disproportionate friction. It must NOT be enabled
+// in any environment that pretends to model production.
+const envDisableSharedKeyAuth = "MINIBLUE_DISABLE_SHAREDKEY_AUTH"
+
+func sharedKeyAuthDisabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(envDisableSharedKeyAuth))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
+
 func (h *Handler) blobSharedKeyAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if sharedKeyAuthDisabled() {
+			next.ServeHTTP(w, r)
+			return
+		}
 		account := chi.URLParam(r, "accountName")
 		k1, k2, hasKeys := storageauth.AccountKeyBytes(h.store, account)
 		if !hasKeys {
