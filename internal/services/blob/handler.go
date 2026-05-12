@@ -389,7 +389,12 @@ func (h *Handler) UploadBlob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data, _ := io.ReadAll(r.Body)
-	ct := r.Header.Get("Content-Type")
+	// Per Put Blob spec, x-ms-blob-content-type takes precedence over
+	// the request's Content-Type header for the stored blob's content type.
+	ct := r.Header.Get("x-ms-blob-content-type")
+	if ct == "" {
+		ct = r.Header.Get("Content-Type")
+	}
 	if ct == "" {
 		ct = "application/octet-stream"
 	}
@@ -402,6 +407,31 @@ func (h *Handler) UploadBlob(w http.ResponseWriter, r *http.Request) {
 			"etag":          fmt.Sprintf("\"0x%X\"", time.Now().UnixNano()),
 		},
 		Content: data,
+	}
+	// Apply x-ms-blob-content-* / x-ms-blob-cache-control system headers.
+	if v := r.Header.Get("x-ms-blob-content-encoding"); v != "" {
+		b.Properties["contentEncoding"] = v
+	}
+	if v := r.Header.Get("x-ms-blob-content-language"); v != "" {
+		b.Properties["contentLanguage"] = v
+	}
+	if v := r.Header.Get("x-ms-blob-content-disposition"); v != "" {
+		b.Properties["contentDisposition"] = v
+	}
+	if v := r.Header.Get("x-ms-blob-cache-control"); v != "" {
+		b.Properties["cacheControl"] = v
+	}
+	if v := r.Header.Get("x-ms-blob-content-md5"); v != "" {
+		b.Properties["contentMD5"] = v
+	}
+	// Apply x-ms-meta-* user metadata. Per Azure spec, Put Blob *replaces*
+	// any existing metadata wholesale; since this is a fresh Blob value the
+	// map starts empty so we just copy the request headers over.
+	for name, vals := range r.Header {
+		lower := strings.ToLower(name)
+		if strings.HasPrefix(lower, "x-ms-meta-") && len(vals) > 0 {
+			b.Properties[lower] = vals[0]
+		}
 	}
 	h.store.Set(h.blobKey(account, container, blobName), b)
 	w.Header().Set("ETag", b.Properties["etag"])
@@ -514,6 +544,27 @@ func (h *Handler) applyMetaHeaders(w http.ResponseWriter, b Blob) {
 	}
 }
 
+// applyContentHeaders emits the system content headers (Content-Encoding,
+// Content-Language, Content-Disposition, Cache-Control, Content-MD5) on
+// Get/Head Blob responses when the blob has corresponding properties set.
+func (h *Handler) applyContentHeaders(w http.ResponseWriter, b Blob) {
+	if v := b.Properties["contentEncoding"]; v != "" {
+		w.Header().Set("Content-Encoding", v)
+	}
+	if v := b.Properties["contentLanguage"]; v != "" {
+		w.Header().Set("Content-Language", v)
+	}
+	if v := b.Properties["contentDisposition"]; v != "" {
+		w.Header().Set("Content-Disposition", v)
+	}
+	if v := b.Properties["cacheControl"]; v != "" {
+		w.Header().Set("Cache-Control", v)
+	}
+	if v := b.Properties["contentMD5"]; v != "" {
+		w.Header().Set("Content-MD5", v)
+	}
+}
+
 func (h *Handler) DownloadBlob(w http.ResponseWriter, r *http.Request) {
 	account := chi.URLParam(r, "accountName")
 	container := chi.URLParam(r, "containerName")
@@ -533,6 +584,7 @@ func (h *Handler) DownloadBlob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("x-ms-request-id", uuid.New().String())
 	h.applyLeaseHeaders(w, account, container, blobName)
 	h.applyMetaHeaders(w, b)
+	h.applyContentHeaders(w, b)
 	w.Write(b.Content)
 }
 
@@ -560,6 +612,7 @@ func (h *Handler) HeadBlob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("x-ms-request-id", uuid.New().String())
 	h.applyLeaseHeaders(w, account, container, blobName)
 	h.applyMetaHeaders(w, b)
+	h.applyContentHeaders(w, b)
 	w.WriteHeader(http.StatusOK)
 }
 
