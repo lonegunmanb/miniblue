@@ -586,6 +586,26 @@ func (h *Handler) applyContentHeaders(w http.ResponseWriter, b Blob) {
 	}
 }
 
+// writeBlobNotFound emits a clean Azure-compatible 404 response for HEAD/GET
+// against a non-existent blob. It mirrors what real Azure Blob Storage
+// returns: x-ms-error-code: BlobNotFound, a deterministic body, and an
+// explicit Content-Length so the response is *fully terminated* (no chunked
+// stream left dangling). Without an explicit Content-Length, Go's net/http
+// server falls back to Transfer-Encoding: chunked; on a HEAD request it then
+// sends headers but no terminating zero-length chunk, which causes
+// well-behaved clients (Go's net/http, curl, …) to hang forever waiting for
+// the body. See https://github.com/lonegunmanb/miniblue/issues for the
+// Terraform azurerm backend reproduction.
+func writeBlobNotFound(w http.ResponseWriter) {
+	const body = `<?xml version="1.0" encoding="utf-8"?><Error><Code>BlobNotFound</Code><Message>The specified blob does not exist.</Message></Error>`
+	w.Header().Set("Content-Type", "application/xml")
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	w.Header().Set("x-ms-error-code", "BlobNotFound")
+	w.Header().Set("x-ms-request-id", uuid.New().String())
+	w.WriteHeader(http.StatusNotFound)
+	_, _ = w.Write([]byte(body))
+}
+
 func (h *Handler) DownloadBlob(w http.ResponseWriter, r *http.Request) {
 	account := chi.URLParam(r, "accountName")
 	container := chi.URLParam(r, "containerName")
@@ -593,7 +613,7 @@ func (h *Handler) DownloadBlob(w http.ResponseWriter, r *http.Request) {
 
 	v, ok := h.store.Get(h.blobKey(account, container, blobName))
 	if !ok {
-		azerr.NotFound(w, "blob", blobName)
+		writeBlobNotFound(w)
 		return
 	}
 	b := v.(Blob)
@@ -619,9 +639,7 @@ func (h *Handler) HeadBlob(w http.ResponseWriter, r *http.Request) {
 
 	v, ok := h.store.Get(h.blobKey(account, container, blobName))
 	if !ok {
-		w.Header().Set("x-ms-error-code", "BlobNotFound")
-		w.Header().Set("x-ms-request-id", uuid.New().String())
-		w.WriteHeader(http.StatusNotFound)
+		writeBlobNotFound(w)
 		return
 	}
 	b := v.(Blob)
