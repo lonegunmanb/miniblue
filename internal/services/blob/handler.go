@@ -47,12 +47,18 @@ func (h *Handler) Register(r chi.Router) {
 			r.Put("/", h.CreateContainer)
 			r.Get("/", h.ListBlobs)
 			r.Delete("/", h.DeleteContainer)
-			r.Route("/{blobName}", func(r chi.Router) {
-				r.Put("/", h.UploadBlob)
-				r.Get("/", h.DownloadBlob)
-				r.Head("/", h.HeadBlob)
-				r.Delete("/", h.DeleteBlob)
-			})
+			// Blob names in Azure may contain forward slashes (e.g.
+			// "env:/prod/terraform.tfstate"), so the blob segment must be a
+			// catch-all wildcard rather than chi's default single-segment
+			// "{blobName}" parameter. Without this, requests like
+			// /blob/{account}/{container}/foo/bar fall through chi's route
+			// tree and are handled by the parent ARM mux's NotFound, which
+			// returns an "InvalidResourceType" JSON error and breaks
+			// Terraform's azurerm backend (issue #14).
+			r.Put("/*", h.UploadBlob)
+			r.Get("/*", h.DownloadBlob)
+			r.Head("/*", h.HeadBlob)
+			r.Delete("/*", h.DeleteBlob)
 		})
 	})
 }
@@ -226,6 +232,14 @@ func (h *Handler) blobKey(account, container, blob string) string {
 	return "blob:blob:" + account + ":" + container + ":" + blob
 }
 
+// blobNameParam extracts the blob name from the request URL. Blob names may
+// contain forward slashes, so the route uses a "/*" catch-all wildcard which
+// chi exposes via the "*" URL parameter. Returning the wildcard match
+// directly preserves nested paths like "env:/prod/terraform.tfstate".
+func blobNameParam(r *http.Request) string {
+	return chi.URLParam(r, "*")
+}
+
 func (h *Handler) CreateContainer(w http.ResponseWriter, r *http.Request) {
 	account := chi.URLParam(r, "accountName")
 	container := chi.URLParam(r, "containerName")
@@ -389,7 +403,7 @@ func (h *Handler) ListBlobs(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) UploadBlob(w http.ResponseWriter, r *http.Request) {
 	account := chi.URLParam(r, "accountName")
 	container := chi.URLParam(r, "containerName")
-	blobName := chi.URLParam(r, "blobName")
+	blobName := blobNameParam(r)
 
 	switch r.URL.Query().Get("comp") {
 	case "lease":
@@ -609,7 +623,7 @@ func writeBlobNotFound(w http.ResponseWriter) {
 func (h *Handler) DownloadBlob(w http.ResponseWriter, r *http.Request) {
 	account := chi.URLParam(r, "accountName")
 	container := chi.URLParam(r, "containerName")
-	blobName := chi.URLParam(r, "blobName")
+	blobName := blobNameParam(r)
 
 	v, ok := h.store.Get(h.blobKey(account, container, blobName))
 	if !ok {
@@ -635,7 +649,7 @@ func (h *Handler) DownloadBlob(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) HeadBlob(w http.ResponseWriter, r *http.Request) {
 	account := chi.URLParam(r, "accountName")
 	container := chi.URLParam(r, "containerName")
-	blobName := chi.URLParam(r, "blobName")
+	blobName := blobNameParam(r)
 
 	v, ok := h.store.Get(h.blobKey(account, container, blobName))
 	if !ok {
@@ -658,7 +672,7 @@ func (h *Handler) HeadBlob(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) DeleteBlob(w http.ResponseWriter, r *http.Request) {
 	account := chi.URLParam(r, "accountName")
 	container := chi.URLParam(r, "containerName")
-	blobName := chi.URLParam(r, "blobName")
+	blobName := blobNameParam(r)
 
 	if status, code, msg, ok := h.leases.checkAccess(account, container, blobName, r.Header.Get("x-ms-lease-id")); !ok {
 		writeBlobLeaseError(w, status, code, msg)
