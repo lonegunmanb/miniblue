@@ -370,9 +370,15 @@ func (h *Handler) UploadBlob(w http.ResponseWriter, r *http.Request) {
 	container := chi.URLParam(r, "containerName")
 	blobName := chi.URLParam(r, "blobName")
 
-	// Lease Blob: PUT {blob}?comp=lease.
-	if r.URL.Query().Get("comp") == "lease" {
+	switch r.URL.Query().Get("comp") {
+	case "lease":
 		h.handleLease(w, r)
+		return
+	case "metadata":
+		h.setBlobMetadata(w, r, account, container, blobName)
+		return
+	case "properties":
+		h.setBlobProperties(w, r, account, container, blobName)
 		return
 	}
 
@@ -404,6 +410,89 @@ func (h *Handler) UploadBlob(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 }
 
+// setBlobMetadata implements PUT /{container}/{blob}?comp=metadata.
+// It persists x-ms-meta-* request headers without touching the blob content.
+func (h *Handler) setBlobMetadata(w http.ResponseWriter, r *http.Request, account, container, blobName string) {
+	if status, code, msg, ok := h.leases.checkAccess(account, container, blobName, r.Header.Get("x-ms-lease-id")); !ok {
+		writeBlobLeaseError(w, status, code, msg)
+		return
+	}
+
+	v, ok := h.store.Get(h.blobKey(account, container, blobName))
+	if !ok {
+		azerr.NotFound(w, "blob", blobName)
+		return
+	}
+	b := v.(Blob)
+
+	// Clear old metadata entries and set new ones from request headers.
+	for k := range b.Properties {
+		if strings.HasPrefix(k, "x-ms-meta-") {
+			delete(b.Properties, k)
+		}
+	}
+	for name, vals := range r.Header {
+		lower := strings.ToLower(name)
+		if strings.HasPrefix(lower, "x-ms-meta-") && len(vals) > 0 {
+			b.Properties[lower] = vals[0]
+		}
+	}
+
+	now := time.Now()
+	b.Properties["lastModified"] = now.UTC().Format(time.RFC1123)
+	b.Properties["etag"] = fmt.Sprintf("\"0x%X\"", now.UnixNano())
+	h.store.Set(h.blobKey(account, container, blobName), b)
+
+	h.setBlobResponseHeaders(w, r)
+	w.Header().Set("ETag", b.Properties["etag"])
+	w.Header().Set("Last-Modified", now.UTC().Format(http.TimeFormat))
+	w.Header().Set("x-ms-request-id", uuid.New().String())
+	w.WriteHeader(http.StatusOK)
+}
+
+// setBlobProperties implements PUT /{container}/{blob}?comp=properties.
+// It updates blob content headers without touching the blob content.
+func (h *Handler) setBlobProperties(w http.ResponseWriter, r *http.Request, account, container, blobName string) {
+	if status, code, msg, ok := h.leases.checkAccess(account, container, blobName, r.Header.Get("x-ms-lease-id")); !ok {
+		writeBlobLeaseError(w, status, code, msg)
+		return
+	}
+
+	v, ok := h.store.Get(h.blobKey(account, container, blobName))
+	if !ok {
+		azerr.NotFound(w, "blob", blobName)
+		return
+	}
+	b := v.(Blob)
+
+	if ct := r.Header.Get("x-ms-blob-content-type"); ct != "" {
+		b.Properties["contentType"] = ct
+	}
+	if ce := r.Header.Get("x-ms-blob-content-encoding"); ce != "" {
+		b.Properties["contentEncoding"] = ce
+	}
+	if cl := r.Header.Get("x-ms-blob-content-language"); cl != "" {
+		b.Properties["contentLanguage"] = cl
+	}
+	if cd := r.Header.Get("x-ms-blob-content-disposition"); cd != "" {
+		b.Properties["contentDisposition"] = cd
+	}
+	if cc := r.Header.Get("x-ms-blob-cache-control"); cc != "" {
+		b.Properties["cacheControl"] = cc
+	}
+
+	now := time.Now()
+	b.Properties["lastModified"] = now.UTC().Format(time.RFC1123)
+	b.Properties["etag"] = fmt.Sprintf("\"0x%X\"", now.UnixNano())
+	h.store.Set(h.blobKey(account, container, blobName), b)
+
+	h.setBlobResponseHeaders(w, r)
+	w.Header().Set("ETag", b.Properties["etag"])
+	w.Header().Set("Last-Modified", now.UTC().Format(http.TimeFormat))
+	w.Header().Set("x-ms-request-id", uuid.New().String())
+	w.WriteHeader(http.StatusOK)
+}
+
 // applyLeaseHeaders writes the x-ms-lease-* headers on a Get/Head Blob
 // response so clients (including Terraform's azurerm backend) can observe the
 // real lease state.
@@ -413,6 +502,15 @@ func (h *Handler) applyLeaseHeaders(w http.ResponseWriter, account, container, b
 	w.Header().Set("x-ms-lease-state", state)
 	if dur != "" {
 		w.Header().Set("x-ms-lease-duration", dur)
+	}
+}
+
+// applyMetaHeaders emits all stored x-ms-meta-* entries as response headers.
+func (h *Handler) applyMetaHeaders(w http.ResponseWriter, b Blob) {
+	for k, v := range b.Properties {
+		if strings.HasPrefix(k, "x-ms-meta-") {
+			w.Header().Set(k, v)
+		}
 	}
 }
 
@@ -434,6 +532,7 @@ func (h *Handler) DownloadBlob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("x-ms-blob-type", "BlockBlob")
 	w.Header().Set("x-ms-request-id", uuid.New().String())
 	h.applyLeaseHeaders(w, account, container, blobName)
+	h.applyMetaHeaders(w, b)
 	w.Write(b.Content)
 }
 
@@ -460,6 +559,7 @@ func (h *Handler) HeadBlob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("x-ms-blob-type", "BlockBlob")
 	w.Header().Set("x-ms-request-id", uuid.New().String())
 	h.applyLeaseHeaders(w, account, container, blobName)
+	h.applyMetaHeaders(w, b)
 	w.WriteHeader(http.StatusOK)
 }
 
