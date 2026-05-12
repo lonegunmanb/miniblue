@@ -125,7 +125,7 @@ func (m *leaseManager) checkAccess(account, container, blob, suppliedID string) 
 func (h *Handler) handleLease(w http.ResponseWriter, r *http.Request) {
 	account := chi.URLParam(r, "accountName")
 	container := chi.URLParam(r, "containerName")
-	blobName := chi.URLParam(r, "blobName")
+	blobName := blobNameParam(r)
 
 	// Blob must exist.
 	if _, ok := h.store.Get(h.blobKey(account, container, blobName)); !ok {

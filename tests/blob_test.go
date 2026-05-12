@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/xml"
 	"io"
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -127,6 +128,78 @@ func TestBlobDelete(t *testing.T) {
 	resp = doRequest(t, "GET", base+"/file.txt", "")
 	defer resp.Body.Close()
 	expectStatus(t, resp, 404)
+}
+
+// TestBlobNestedPath verifies that blob paths containing forward slashes
+// (e.g. Terraform's "env:/prod/terraform.tfstate" layout) are routed to the
+// blob service handlers rather than falling through chi's route tree to the
+// parent ARM mux's NotFound (which would emit an "InvalidResourceType" JSON
+// error and break Terraform's azurerm backend — see issue #14).
+func TestBlobNestedPath(t *testing.T) {
+	ts := setupServer()
+	defer ts.Close()
+	base := ts.URL + "/blob/myaccount/mycontainer"
+	nested := base + "/demo/terraform.tfstate"
+
+	doRequest(t, "PUT", base, "").Body.Close()
+
+	// HEAD on a nested, non-existent blob must reach writeBlobNotFound
+	// (XML body, x-ms-error-code: BlobNotFound) — not the ARM 404.
+	resp := doRequest(t, "HEAD", nested, "")
+	expectStatus(t, resp, 404)
+	if got := resp.Header.Get("x-ms-error-code"); got != "BlobNotFound" {
+		t.Errorf("HEAD nested: expected x-ms-error-code=BlobNotFound, got %q", got)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "xml") {
+		t.Errorf("HEAD nested: expected XML Content-Type, got %q", ct)
+	}
+	resp.Body.Close()
+
+	// PUT a nested blob, then GET it back to confirm the wildcard route
+	// preserves the full path including slashes.
+	resp = doRequest(t, "PUT", nested, "state-payload")
+	resp.Body.Close()
+	expectStatus(t, resp, 201)
+
+	resp = doRequest(t, "GET", nested, "")
+	defer resp.Body.Close()
+	expectStatus(t, resp, 200)
+	var buf bytes.Buffer
+	buf.ReadFrom(resp.Body)
+	if buf.String() != "state-payload" {
+		t.Fatalf("expected 'state-payload', got %q", buf.String())
+	}
+}
+
+// TestBlobNestedPathLease verifies that ?comp=lease on a nested blob path is
+// also routed to the blob service handler (handleLease) rather than the ARM
+// fallback. This is exactly the third request Terraform's azurerm backend
+// issues during Lock().
+func TestBlobNestedPathLease(t *testing.T) {
+	ts := setupServer()
+	defer ts.Close()
+	base := ts.URL + "/blob/myaccount/mycontainer"
+	nested := base + "/demo/terraform.tfstate"
+
+	doRequest(t, "PUT", base, "").Body.Close()
+	doRequest(t, "PUT", nested, "").Body.Close()
+
+	req, _ := http.NewRequest("PUT", nested+"?comp=lease", nil)
+	req.Header.Set("x-ms-lease-action", "acquire")
+	req.Header.Set("x-ms-lease-duration", "60")
+	req.Header.Set("x-ms-proposed-lease-id", "11111111-1111-1111-1111-111111111111")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	// Real blob service returns 201 Created with x-ms-lease-id; ARM
+	// fallback would return JSON 404 InvalidResourceType.
+	expectStatus(t, resp, 201)
+	if got := resp.Header.Get("x-ms-lease-id"); got == "" {
+		t.Errorf("expected x-ms-lease-id header, got empty")
+	}
 }
 
 // TestBlobNotFoundTerminatesResponse verifies that HEAD/GET against a
