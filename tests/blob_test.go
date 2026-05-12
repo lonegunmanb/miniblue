@@ -2,7 +2,8 @@ package tests
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/xml"
+	"strings"
 	"testing"
 )
 
@@ -48,22 +49,56 @@ func TestBlobListContentLength(t *testing.T) {
 
 	resp := doRequest(t, "GET", base, "")
 	defer resp.Body.Close()
+	expectStatus(t, resp, 200)
+
+	if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "xml") {
+		t.Fatalf("expected XML Content-Type, got %s", ct)
+	}
 
 	var result struct {
-		Blobs []struct {
-			Name       string `json:"name"`
-			Properties struct {
-				ContentLength string `json:"contentLength"`
-			} `json:"properties"`
-		} `json:"blobs"`
+		XMLName         xml.Name `xml:"EnumerationResults"`
+		ServiceEndpoint string   `xml:"ServiceEndpoint,attr"`
+		ContainerName   string   `xml:"ContainerName,attr"`
+		Blobs           struct {
+			Items []struct {
+				Name       string `xml:"Name"`
+				Properties struct {
+					ContentLength int64  `xml:"Content-Length"`
+					ContentType   string `xml:"Content-Type"`
+					BlobType      string `xml:"BlobType"`
+					LeaseStatus   string `xml:"LeaseStatus"`
+					LeaseState    string `xml:"LeaseState"`
+					Etag          string `xml:"Etag"`
+					LastModified  string `xml:"Last-Modified"`
+				} `xml:"Properties"`
+			} `xml:"Blob"`
+		} `xml:"Blobs"`
 	}
-	json.NewDecoder(resp.Body).Decode(&result)
+	if err := xml.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode XML response: %v", err)
+	}
 
-	if len(result.Blobs) != 1 {
-		t.Fatalf("expected 1 blob, got %d", len(result.Blobs))
+	if result.ContainerName != "mycontainer" {
+		t.Fatalf("expected ContainerName=mycontainer, got %q", result.ContainerName)
 	}
-	if result.Blobs[0].Properties.ContentLength != "6" {
-		t.Fatalf("expected contentLength=6, got %s", result.Blobs[0].Properties.ContentLength)
+	if result.ServiceEndpoint == "" {
+		t.Fatalf("expected ServiceEndpoint attribute to be set")
+	}
+	if len(result.Blobs.Items) != 1 {
+		t.Fatalf("expected 1 blob, got %d", len(result.Blobs.Items))
+	}
+	b := result.Blobs.Items[0]
+	if b.Name != "test.txt" {
+		t.Fatalf("expected blob name test.txt, got %q", b.Name)
+	}
+	if b.Properties.ContentLength != 6 {
+		t.Fatalf("expected Content-Length=6, got %d", b.Properties.ContentLength)
+	}
+	if b.Properties.BlobType != "BlockBlob" {
+		t.Fatalf("expected BlobType=BlockBlob, got %q", b.Properties.BlobType)
+	}
+	if b.Properties.LeaseStatus != "unlocked" || b.Properties.LeaseState != "available" {
+		t.Fatalf("expected unlocked/available lease, got %q/%q", b.Properties.LeaseStatus, b.Properties.LeaseState)
 	}
 }
 

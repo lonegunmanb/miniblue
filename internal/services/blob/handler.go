@@ -1,12 +1,13 @@
 package blob
 
 import (
-	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -227,12 +228,141 @@ func (h *Handler) DeleteContainer(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 }
 
+// blobListEnumerationResults models the List Blobs response envelope as
+// described by the official Azure Storage REST API:
+// https://learn.microsoft.com/en-us/rest/api/storageservices/list-blobs
+type blobListEnumerationResults struct {
+	XMLName         xml.Name   `xml:"EnumerationResults"`
+	ServiceEndpoint string     `xml:"ServiceEndpoint,attr"`
+	ContainerName   string     `xml:"ContainerName,attr"`
+	Prefix          string     `xml:"Prefix"`
+	Marker          string     `xml:"Marker"`
+	MaxResults      int        `xml:"MaxResults"`
+	Delimiter       string     `xml:"Delimiter"`
+	Blobs           blobsBlock `xml:"Blobs"`
+	NextMarker      string     `xml:"NextMarker"`
+}
+
+type blobsBlock struct {
+	Items []blobXML `xml:"Blob"`
+}
+
+type blobXML struct {
+	Name       string       `xml:"Name"`
+	Properties blobPropsXML `xml:"Properties"`
+}
+
+type blobPropsXML struct {
+	LastModified  string `xml:"Last-Modified"`
+	Etag          string `xml:"Etag"`
+	ContentLength int64  `xml:"Content-Length"`
+	ContentType   string `xml:"Content-Type"`
+	BlobType      string `xml:"BlobType"`
+	LeaseStatus   string `xml:"LeaseStatus"`
+	LeaseState    string `xml:"LeaseState"`
+}
+
 func (h *Handler) ListBlobs(w http.ResponseWriter, r *http.Request) {
 	account := chi.URLParam(r, "accountName")
 	container := chi.URLParam(r, "containerName")
 	prefix := "blob:blob:" + account + ":" + container + ":"
 	items := h.store.ListByPrefix(prefix)
-	json.NewEncoder(w).Encode(map[string]interface{}{"blobs": items})
+
+	q := r.URL.Query()
+	reqPrefix := q.Get("prefix")
+	marker := q.Get("marker")
+	delimiter := q.Get("delimiter")
+	maxResults := 0
+	if v := q.Get("maxresults"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			maxResults = n
+		}
+	}
+
+	blobs := make([]Blob, 0, len(items))
+	for _, v := range items {
+		b, ok := v.(Blob)
+		if !ok || b.Name == "" {
+			continue
+		}
+		if reqPrefix != "" && !strings.HasPrefix(b.Name, reqPrefix) {
+			continue
+		}
+		blobs = append(blobs, b)
+	}
+	sort.Slice(blobs, func(i, j int) bool { return blobs[i].Name < blobs[j].Name })
+
+	scheme := "https"
+	if r.TLS == nil {
+		scheme = "http"
+	}
+	host := r.Host
+	if host == "" {
+		host = account + ".blob.core.windows.net"
+	}
+	endpoint := scheme + "://" + host + "/" + account + "/"
+
+	res := blobListEnumerationResults{
+		ServiceEndpoint: endpoint,
+		ContainerName:   container,
+		Prefix:          reqPrefix,
+		Marker:          marker,
+		MaxResults:      maxResults,
+		Delimiter:       delimiter,
+		Blobs:           blobsBlock{Items: make([]blobXML, 0, len(blobs))},
+	}
+
+	for _, b := range blobs {
+		lastModified := b.Properties["lastModified"]
+		if lastModified == "" {
+			lastModified = time.Now().UTC().Format(http.TimeFormat)
+		}
+		etag := b.Properties["etag"]
+		ct := b.Properties["contentType"]
+		if ct == "" {
+			ct = "application/octet-stream"
+		}
+		var contentLength int64
+		if v := b.Properties["contentLength"]; v != "" {
+			if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+				contentLength = n
+			}
+		} else {
+			contentLength = int64(len(b.Content))
+		}
+		leaseStatus, leaseState, _, _ := h.leases.snapshot(account, container, b.Name)
+		if leaseStatus == "" {
+			leaseStatus = "unlocked"
+		}
+		if leaseState == "" {
+			leaseState = "available"
+		}
+		res.Blobs.Items = append(res.Blobs.Items, blobXML{
+			Name: b.Name,
+			Properties: blobPropsXML{
+				LastModified:  lastModified,
+				Etag:          etag,
+				ContentLength: contentLength,
+				ContentType:   ct,
+				BlobType:      "BlockBlob",
+				LeaseStatus:   leaseStatus,
+				LeaseState:    leaseState,
+			},
+		})
+	}
+
+	h.setBlobResponseHeaders(w, r)
+	w.Header().Set("Content-Type", "application/xml")
+	w.Header().Set("x-ms-request-id", uuid.New().String())
+
+	out, err := xml.MarshalIndent(res, "", "  ")
+	if err != nil {
+		azerr.WriteError(w, http.StatusInternalServerError, "InternalError", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(xml.Header))
+	_, _ = w.Write(out)
 }
 
 func (h *Handler) UploadBlob(w http.ResponseWriter, r *http.Request) {
