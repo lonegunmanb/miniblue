@@ -172,6 +172,8 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	h.store.DeleteByPrefix("nsgrule:" + p)
 	h.store.DeleteByPrefix("publicip:" + p)
 	h.store.DeleteByPrefix("disk:" + p)
+	h.store.DeleteByPrefix("vm:" + p)
+	h.store.DeleteByPrefix("vmext:" + p)
 	h.store.DeleteByPrefix("nic:" + p)
 	h.store.DeleteByPrefix("lb:" + p)
 	h.store.DeleteByPrefix("appgw:" + p)
