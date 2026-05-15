@@ -136,6 +136,12 @@ Examples:
   azlocal storage blob download --account myaccount --container mycontainer --name hello.txt
   azlocal storage blob list --account myaccount --container mycontainer
 
+  azlocal network vnet create --resource-group myRG --name myvnet --address-prefix 10.0.0.0/16
+  azlocal network vnet subnet create --resource-group myRG --vnet-name myvnet --name mysubnet --address-prefixes 10.0.1.0/24
+  azlocal network vnet subnet list   --resource-group myRG --vnet-name myvnet
+  azlocal network vnet subnet show   --resource-group myRG --vnet-name myvnet --name mysubnet
+  azlocal network vnet subnet delete --resource-group myRG --vnet-name myvnet --name mysubnet
+
   azlocal dns zone create --resource-group myRG --name example.com
   azlocal dns record create --resource-group myRG --zone example.com --type A --name www --data '{"properties":{"TTL":300,"ARecords":[{"ipv4Address":"1.2.3.4"}]}}'
 
@@ -513,12 +519,21 @@ func handleStorageAccount(args []string) {
 func handleNetwork(args []string) {
 	if len(args) < 2 {
 		fmt.Println("Usage: azlocal network vnet <create|show|list|delete> [flags]")
+		fmt.Println("       azlocal network vnet subnet <create|show|list|delete|update> [flags]")
 		return
 	}
 	if args[0] != "vnet" {
 		fmt.Fprintf(os.Stderr, "Unknown subcommand: network %s\n", args[0])
+		os.Exit(1)
+	}
+
+	// Dispatch the `subnet` subcommand group before consuming the vnet flags,
+	// because subnet commands use --vnet-name (not --name) to identify the parent VNet.
+	if args[1] == "subnet" {
+		handleNetworkSubnet(args[2:])
 		return
 	}
+
 	rg := requireFlag(args, "resource-group")
 	s := sub(args)
 	base := "/subscriptions/" + s + "/resourceGroups/" + rg + "/providers/Microsoft.Network/virtualNetworks"
@@ -546,6 +561,55 @@ func handleNetwork(args []string) {
 	case "delete":
 		name := requireFlag(args, "name")
 		doDelete(base + "/" + name)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown subcommand: network vnet %s\n", args[1])
+		os.Exit(1)
+	}
+}
+
+// handleNetworkSubnet implements `azlocal network vnet subnet <action>`,
+// mirroring the upstream `az network vnet subnet` flag names.
+func handleNetworkSubnet(args []string) {
+	if len(args) < 1 {
+		fmt.Println("Usage: azlocal network vnet subnet <create|show|list|delete|update> [flags]")
+		return
+	}
+	rg := requireFlag(args, "resource-group")
+	vnet := requireFlag(args, "vnet-name")
+	s := sub(args)
+	base := "/subscriptions/" + s + "/resourceGroups/" + rg +
+		"/providers/Microsoft.Network/virtualNetworks/" + vnet + "/subnets"
+
+	switch args[0] {
+	case "create", "update":
+		name := requireFlag(args, "name")
+		prefixes := getFlag(args, "address-prefixes")
+		props := map[string]interface{}{}
+		if prefixes != "" {
+			// `az` accepts a space-separated list of CIDRs; mimic that here.
+			parts := strings.Fields(prefixes)
+			props["addressPrefixes"] = parts
+			if len(parts) > 0 {
+				props["addressPrefix"] = parts[0]
+			}
+		} else if args[0] == "create" {
+			fmt.Fprintln(os.Stderr, "Error: --address-prefixes is required")
+			os.Exit(1)
+		}
+		doPut(base+"/"+name, map[string]interface{}{
+			"properties": props,
+		})
+	case "show":
+		name := requireFlag(args, "name")
+		doGet(base + "/" + name)
+	case "list":
+		doGet(base)
+	case "delete":
+		name := requireFlag(args, "name")
+		doDelete(base + "/" + name)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown subcommand: network vnet subnet %s\n", args[0])
+		os.Exit(1)
 	}
 }
 

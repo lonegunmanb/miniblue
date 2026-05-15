@@ -152,6 +152,23 @@ azlocal network vnet list --resource-group myRG
 
 # Delete a VNet
 azlocal network vnet delete --name my-vnet --resource-group myRG
+
+# Create a subnet inside a VNet
+azlocal network vnet subnet create --resource-group myRG --vnet-name my-vnet \
+  --name my-subnet --address-prefixes 10.0.1.0/24
+
+# Show a subnet
+azlocal network vnet subnet show --resource-group myRG --vnet-name my-vnet --name my-subnet
+
+# List subnets in a VNet
+azlocal network vnet subnet list --resource-group myRG --vnet-name my-vnet
+
+# Update a subnet (re-issues a PUT with the new properties)
+azlocal network vnet subnet update --resource-group myRG --vnet-name my-vnet \
+  --name my-subnet --address-prefixes 10.0.2.0/24
+
+# Delete a subnet
+azlocal network vnet subnet delete --resource-group myRG --vnet-name my-vnet --name my-subnet
 ```
 
 All network commands require `--resource-group`. Optionally pass `--subscription` (defaults to `00000000-0000-0000-0000-000000000000`).
@@ -261,6 +278,7 @@ azlocal functionapp delete --name my-func --resource-group myRG
 | `azlocal storage container` | `create`, `delete` |
 | `azlocal storage blob` | `upload`, `download`, `list`, `delete` |
 | `azlocal network vnet` | `create`, `show`, `list`, `delete` |
+| `azlocal network vnet subnet` | `create`, `show`, `list`, `delete`, `update` |
 | `azlocal cosmosdb doc` | `create`, `show`, `list`, `delete` |
 | `azlocal servicebus queue` | `create`, `send`, `receive`, `delete` |
 | `azlocal servicebus topic` | `create`, `send`, `delete` |
