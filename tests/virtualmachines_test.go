@@ -54,13 +54,13 @@ func TestVirtualMachineLifecycleReferencesActionsAndSensitiveFields(t *testing.T
 	if vm["id"] != vmID {
 		t.Fatalf("expected VM id %s, got %v", vmID, vm["id"])
 	}
-	assertVMSensitiveFieldsAbsent(t, vm)
+	assertVMResponseShape(t, vm)
 
 	resp = doRequest(t, "GET", compute+"/virtualMachines/vm1"+av, "")
 	expectStatus(t, resp, 200)
 	vm = decodeJSON(t, resp)
 	resp.Body.Close()
-	assertVMSensitiveFieldsAbsent(t, vm)
+	assertVMResponseShape(t, vm)
 
 	resp = doRequest(t, "GET", net+"/networkInterfaces/nic1"+av, "")
 	expectStatus(t, resp, 200)
@@ -92,7 +92,7 @@ func TestVirtualMachineLifecycleReferencesActionsAndSensitiveFields(t *testing.T
 	if patched["properties"].(map[string]interface{})["hardwareProfile"].(map[string]interface{})["vmSize"] != "Standard_B2s" {
 		t.Fatalf("expected patched vmSize")
 	}
-	assertVMSensitiveFieldsAbsent(t, patched)
+	assertVMResponseShape(t, patched)
 
 	resp = doRequest(t, "POST", compute+"/virtualMachines/vm1/powerOff"+av, `{}`)
 	expectStatus(t, resp, 202)
@@ -169,7 +169,7 @@ func TestVirtualMachineLifecycleReferencesActionsAndSensitiveFields(t *testing.T
 	}
 }
 
-func assertVMSensitiveFieldsAbsent(t *testing.T, vm map[string]interface{}) {
+func assertVMResponseShape(t *testing.T, vm map[string]interface{}) {
 	t.Helper()
 	props := vm["properties"].(map[string]interface{})
 	osProfile := props["osProfile"].(map[string]interface{})
@@ -178,7 +178,65 @@ func assertVMSensitiveFieldsAbsent(t *testing.T, vm map[string]interface{}) {
 	}
 	linuxConfig := osProfile["linuxConfiguration"].(map[string]interface{})
 	ssh := linuxConfig["ssh"].(map[string]interface{})
-	if _, ok := ssh["publicKeys"]; ok {
-		t.Fatalf("GET-style VM response must not include ssh publicKeys")
+	publicKeys, ok := ssh["publicKeys"].([]interface{})
+	if !ok || len(publicKeys) != 1 {
+		t.Fatalf("GET-style VM response must include ssh publicKeys, got %v", ssh["publicKeys"])
+	}
+	publicKey := publicKeys[0].(map[string]interface{})
+	if publicKey["path"] != "/home/azureuser/.ssh/authorized_keys" || publicKey["keyData"] != "ssh-rsa AAA" {
+		t.Fatalf("unexpected ssh publicKeys payload: %v", publicKey)
+	}
+}
+
+func TestVirtualMachineFromImageDefaults(t *testing.T) {
+	ts := setupServer()
+	defer ts.Close()
+
+	av := "?api-version=2023-09-01"
+	compute := ts.URL + "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Compute"
+
+	vmBody := `{
+		"location":"eastus",
+		"properties":{
+			"additionalCapabilities":{},
+			"storageProfile":{
+				"imageReference":{"publisher":"Canonical","offer":"0001-com-ubuntu-server-jammy","sku":"22_04-lts","version":"latest"},
+				"osDisk":{"createOption":"FromImage"}
+			},
+			"osProfile":{
+				"computerName":"vm-defaults",
+				"adminUsername":"azureuser",
+				"linuxConfiguration":{"ssh":{"publicKeys":[{"path":"/home/azureuser/.ssh/authorized_keys","keyData":"ssh-rsa AAA"}]}}
+			}
+		}
+	}`
+	resp := doRequest(t, "PUT", compute+"/virtualMachines/vm-defaults"+av, vmBody)
+	expectStatus(t, resp, 201)
+	vm := decodeJSON(t, resp)
+	resp.Body.Close()
+	assertVMResponseShape(t, vm)
+
+	props := vm["properties"].(map[string]interface{})
+	storageProfile := props["storageProfile"].(map[string]interface{})
+	osDisk := storageProfile["osDisk"].(map[string]interface{})
+
+	if osDisk["diskSizeGB"] != float64(30) {
+		t.Fatalf("expected default Linux osDisk.diskSizeGB to be 30, got %v", osDisk["diskSizeGB"])
+	}
+	osDiskName, _ := osDisk["name"].(string)
+	if osDiskName == "" {
+		t.Fatalf("expected osDisk.name to be generated")
+	}
+	managedDisk := osDisk["managedDisk"].(map[string]interface{})
+	expectedManagedDiskID := "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Compute/disks/" + osDiskName
+	if managedDisk["id"] != expectedManagedDiskID {
+		t.Fatalf("expected generated managedDisk id %s, got %v", expectedManagedDiskID, managedDisk["id"])
+	}
+	if _, ok := props["vmId"].(string); !ok || props["vmId"] == "" {
+		t.Fatalf("expected properties.vmId to be generated, got %v", props["vmId"])
+	}
+	additionalCapabilities := props["additionalCapabilities"].(map[string]interface{})
+	if additionalCapabilities["hibernationEnabled"] != false || additionalCapabilities["ultraSSDEnabled"] != false {
+		t.Fatalf("expected additionalCapabilities defaults to be false/false, got %v", additionalCapabilities)
 	}
 }

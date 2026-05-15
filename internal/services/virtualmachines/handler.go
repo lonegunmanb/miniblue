@@ -1,13 +1,17 @@
 package virtualmachines
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/moabukar/miniblue/internal/azerr"
+	"github.com/moabukar/miniblue/internal/services/compute"
 	"github.com/moabukar/miniblue/internal/store"
 )
 
@@ -211,6 +215,9 @@ func buildResponse(sub, rg, name string, input map[string]interface{}, existing 
 			vmProps["networkProfile"] = v
 		}
 	}
+	normalizeVMStorageProfile(sub, rg, name, vmProps)
+	normalizeAdditionalCapabilities(vmProps)
+	ensureVMID(sub, rg, name, vmProps, existingProps)
 	vmProps["provisioningState"] = "Succeeded"
 
 	state := firstString(existing["_powerState"])
@@ -254,15 +261,73 @@ func sanitizeVM(vm map[string]interface{}, includeInstanceView bool) map[string]
 		return out
 	}
 	delete(osProfile, "adminPassword")
-	linuxConfig := asMap(osProfile["linuxConfiguration"])
-	if linuxConfig == nil {
-		return out
-	}
-	ssh := asMap(linuxConfig["ssh"])
-	if ssh != nil {
-		delete(ssh, "publicKeys")
-	}
 	return out
+}
+
+func normalizeVMStorageProfile(sub, rg, name string, vmProps map[string]interface{}) {
+	storageProfile := asMap(vmProps["storageProfile"])
+	if storageProfile == nil {
+		return
+	}
+	osDisk := asMap(storageProfile["osDisk"])
+	if osDisk == nil {
+		return
+	}
+
+	if diskSize, ok := osDisk["diskSizeGB"].(float64); !ok || diskSize == 0 {
+		defaultSize := float64(30)
+		imageRef := asMap(storageProfile["imageReference"])
+		if imageRef != nil {
+			publisher, _ := imageRef["publisher"].(string)
+			offer, _ := imageRef["offer"].(string)
+			sku, _ := imageRef["sku"].(string)
+			if osType, ok := compute.LookupImage(publisher, offer, sku); ok && strings.EqualFold(osType, "Windows") {
+				defaultSize = 127
+			}
+		}
+		osDisk["diskSizeGB"] = defaultSize
+	}
+
+	diskName := firstString(osDisk["name"])
+	if diskName == "" {
+		sum := sha1.Sum([]byte(sub + ":" + rg + ":" + name))
+		diskName = fmt.Sprintf("%s_OsDisk_%s", name, hex.EncodeToString(sum[:4]))
+		osDisk["name"] = diskName
+	}
+
+	managedDisk := asMap(osDisk["managedDisk"])
+	if managedDisk == nil {
+		managedDisk = map[string]interface{}{}
+		osDisk["managedDisk"] = managedDisk
+	}
+	if firstString(managedDisk["id"]) == "" {
+		managedDisk["id"] = "/subscriptions/" + sub + "/resourceGroups/" + rg + "/providers/Microsoft.Compute/disks/" + diskName
+	}
+}
+
+func normalizeAdditionalCapabilities(vmProps map[string]interface{}) {
+	additionalCapabilities := asMap(vmProps["additionalCapabilities"])
+	if additionalCapabilities == nil {
+		return
+	}
+	if _, ok := additionalCapabilities["hibernationEnabled"]; !ok {
+		additionalCapabilities["hibernationEnabled"] = false
+	}
+	if _, ok := additionalCapabilities["ultraSSDEnabled"]; !ok {
+		additionalCapabilities["ultraSSDEnabled"] = false
+	}
+}
+
+func ensureVMID(sub, rg, name string, vmProps map[string]interface{}, existingProps map[string]interface{}) {
+	if firstString(vmProps["vmId"]) != "" {
+		return
+	}
+	if existingVMID := firstString(existingProps["vmId"]); existingVMID != "" {
+		vmProps["vmId"] = existingVMID
+		return
+	}
+	sum := sha1.Sum([]byte(sub + ":" + rg + ":" + name))
+	vmProps["vmId"] = fmt.Sprintf("%x-%x-%x-%x-%x", sum[0:4], sum[4:6], sum[6:8], sum[8:10], sum[10:16])
 }
 
 func sanitizeExtension(ext map[string]interface{}) map[string]interface{} {
