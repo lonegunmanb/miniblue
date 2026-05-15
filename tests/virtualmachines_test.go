@@ -163,7 +163,8 @@ func TestVirtualMachineLifecycleReferencesActionsAndSensitiveFields(t *testing.T
 	disk := decodeJSON(t, resp)
 	resp.Body.Close()
 	props := disk["properties"].(map[string]interface{})
-	if props["managedBy"] != "" || props["diskState"] != "Unattached" {
+	managedBy, _ := props["managedBy"].(string)
+	if managedBy != "" || props["diskState"] != "Unattached" {
 		t.Fatalf("expected VM delete to detach disk, got managedBy=%v state=%v", props["managedBy"], props["diskState"])
 	}
 }
