@@ -25,6 +25,8 @@ func TestResourceGroupCascadeDeleteAllServices(t *testing.T) {
 		`{"properties":{"priority":100,"direction":"Inbound","access":"Allow","protocol":"Tcp","sourcePortRange":"*","destinationPortRange":"80","sourceAddressPrefix":"*","destinationAddressPrefix":"*"}}`).Body.Close()
 	doRequest(t, "PUT", net+"/publicIPAddresses/pip1"+av,
 		`{"location":"eastus"}`).Body.Close()
+	doRequest(t, "PUT", net+"/networkInterfaces/nic1"+av,
+		`{"location":"eastus","properties":{"ipConfigurations":[{"name":"ipconfig1","properties":{"privateIPAllocationMethod":"Dynamic"}}]}}`).Body.Close()
 	doRequest(t, "PUT", net+"/loadBalancers/lb1"+av,
 		`{"location":"eastus"}`).Body.Close()
 	doRequest(t, "PUT", net+"/applicationGateways/appgw1"+av,
@@ -43,6 +45,7 @@ func TestResourceGroupCascadeDeleteAllServices(t *testing.T) {
 		{"NSG", net + "/networkSecurityGroups/nsg1" + av},
 		{"NSG Rule", net + "/networkSecurityGroups/nsg1/securityRules/rule1" + av},
 		{"Public IP", net + "/publicIPAddresses/pip1" + av},
+		{"Network Interface", net + "/networkInterfaces/nic1" + av},
 		{"Load Balancer", net + "/loadBalancers/lb1" + av},
 		{"App Gateway", net + "/applicationGateways/appgw1" + av},
 	}

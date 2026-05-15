@@ -28,6 +28,7 @@ What's implemented, stubbed, and unsupported in miniblue compared to real Azure 
 | Kubernetes Service (AKS) | Full | Full | Full | Full | - | Real k3s clusters with `AKS_BACKEND=k3s`; agent pool GET only |
 | Public IP Addresses | Full | Full | Full | Full | - | Static/dynamic allocation, auto-generated IPs |
 | Network Security Groups | Full | Full | Full | Full | - | Security rules, default rules, cascade delete |
+| Network Interfaces | Full | Full | Full | Full | Full (PATCH) | IP configurations, subnet/Public IP references, VM back-reference |
 | Load Balancer | Full | Full | Full | Full | - | Frontends, backends, rules, probes, NAT |
 | Application Gateway | Full | Full | Full | Full | - | SKU, frontends, backends, listeners, rules, probes, WAF |
 | Storage Accounts | Full | Full | Full | Full | - | Shared key auth, blob/queue/table/file endpoints |
