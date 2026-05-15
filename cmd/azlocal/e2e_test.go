@@ -147,6 +147,109 @@ func TestStorageAccountMissingResourceGroup(t *testing.T) {
 	}
 }
 
+// --- vm ---
+
+func TestVMCreateShowListDelete(t *testing.T) {
+	ts := setupMiniblue()
+	defer ts.Close()
+
+	createOut, _, code := runAzlocal(ts, "vm", "create",
+		"--resource-group", "myRG",
+		"--name", "vm1",
+		"--location", "westus2",
+		"--size", "Standard_B1s",
+		"--image", "Ubuntu2204",
+		"--admin-username", "azureuser")
+	if code != 0 {
+		t.Fatalf("vm create failed: %s", createOut)
+	}
+	if !strings.Contains(createOut, "\"name\": \"vm1\"") ||
+		!strings.Contains(createOut, "Microsoft.Compute/virtualMachines") ||
+		!strings.Contains(createOut, "Standard_B1s") ||
+		!strings.Contains(createOut, "azureuser") {
+		t.Fatalf("expected VM details in create output, got: %s", createOut)
+	}
+
+	showOut, _, _ := runAzlocal(ts, "vm", "show",
+		"--resource-group", "myRG",
+		"--name", "vm1")
+	if !strings.Contains(showOut, "\"name\": \"vm1\"") {
+		t.Fatalf("expected VM name in show output, got: %s", showOut)
+	}
+
+	listOut, _, _ := runAzlocal(ts, "vm", "list", "--resource-group", "myRG")
+	if !strings.Contains(listOut, "\"name\": \"vm1\"") {
+		t.Fatalf("expected VM in list output, got: %s", listOut)
+	}
+
+	deleteOut, _, _ := runAzlocal(ts, "vm", "delete",
+		"--resource-group", "myRG",
+		"--name", "vm1")
+	if !strings.Contains(strings.ToLower(deleteOut), "deleted") {
+		t.Fatalf("expected delete confirmation, got: %s", deleteOut)
+	}
+}
+
+func TestVMPowerActionsAndInstanceView(t *testing.T) {
+	ts := setupMiniblue()
+	defer ts.Close()
+
+	runAzlocal(ts, "vm", "create", "--resource-group", "myRG", "--name", "vm1")
+
+	stopOut, _, code := runAzlocal(ts, "vm", "stop", "--resource-group", "myRG", "--name", "vm1")
+	if code != 0 {
+		t.Fatalf("vm stop failed: %s", stopOut)
+	}
+
+	instanceViewOut, _, _ := runAzlocal(ts, "vm", "get-instance-view",
+		"--resource-group", "myRG",
+		"--name", "vm1")
+	if !strings.Contains(instanceViewOut, "PowerState/stopped") {
+		t.Fatalf("expected stopped power state, got: %s", instanceViewOut)
+	}
+
+	startOut, _, code := runAzlocal(ts, "vm", "start", "--resource-group", "myRG", "--name", "vm1")
+	if code != 0 {
+		t.Fatalf("vm start failed: %s", startOut)
+	}
+}
+
+func TestVMExtensionLifecycle(t *testing.T) {
+	ts := setupMiniblue()
+	defer ts.Close()
+
+	runAzlocal(ts, "vm", "create", "--resource-group", "myRG", "--name", "vm1")
+
+	setOut, _, code := runAzlocal(ts, "vm", "extension", "set",
+		"--resource-group", "myRG",
+		"--vm-name", "vm1",
+		"--name", "customScript",
+		"--publisher", "Microsoft.Azure.Extensions",
+		"--type", "CustomScript",
+		"--settings", `{"commandToExecute":"echo ok"}`)
+	if code != 0 {
+		t.Fatalf("vm extension set failed: %s", setOut)
+	}
+	if !strings.Contains(setOut, "\"name\": \"customScript\"") {
+		t.Fatalf("expected extension name in set output, got: %s", setOut)
+	}
+
+	listOut, _, _ := runAzlocal(ts, "vm", "extension", "list",
+		"--resource-group", "myRG",
+		"--vm-name", "vm1")
+	if !strings.Contains(listOut, "customScript") {
+		t.Fatalf("expected extension in list output, got: %s", listOut)
+	}
+
+	deleteOut, _, _ := runAzlocal(ts, "vm", "extension", "delete",
+		"--resource-group", "myRG",
+		"--vm-name", "vm1",
+		"--name", "customScript")
+	if !strings.Contains(strings.ToLower(deleteOut), "deleted") {
+		t.Fatalf("expected extension delete confirmation, got: %s", deleteOut)
+	}
+}
+
 // --- network vnet subnet ---
 
 func TestNetworkVNetSubnetCreateAndShow(t *testing.T) {

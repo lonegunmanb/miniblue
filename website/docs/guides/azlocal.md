@@ -175,6 +175,38 @@ All network commands require `--resource-group`. Optionally pass `--subscription
 
 ---
 
+### vm (Virtual Machines)
+
+```bash
+# Create a VM
+azlocal vm create --resource-group myRG --name my-vm \
+  --image Ubuntu2204 --size Standard_B1s --admin-username azureuser
+
+# Show a VM
+azlocal vm show --resource-group myRG --name my-vm
+
+# List VMs
+azlocal vm list --resource-group myRG
+
+# Stop and inspect a VM
+azlocal vm stop --resource-group myRG --name my-vm
+azlocal vm get-instance-view --resource-group myRG --name my-vm
+
+# Delete a VM
+azlocal vm delete --resource-group myRG --name my-vm
+
+# Manage VM extensions
+azlocal vm extension set --resource-group myRG --vm-name my-vm \
+  --name customScript --publisher Microsoft.Azure.Extensions \
+  --type CustomScript --settings '{"commandToExecute":"echo ok"}'
+azlocal vm extension list --resource-group myRG --vm-name my-vm
+azlocal vm extension delete --resource-group myRG --vm-name my-vm --name customScript
+```
+
+VM commands support `create`, `show`, `list`, `update`, `delete`, `start`, `stop`, `restart`, `deallocate`, `redeploy`, and `get-instance-view`.
+
+---
+
 ### cosmosdb (Cosmos DB)
 
 ```bash
@@ -279,6 +311,8 @@ azlocal functionapp delete --name my-func --resource-group myRG
 | `azlocal storage blob` | `upload`, `download`, `list`, `delete` |
 | `azlocal network vnet` | `create`, `show`, `list`, `delete` |
 | `azlocal network vnet subnet` | `create`, `show`, `list`, `delete`, `update` |
+| `azlocal vm` | `create`, `show`, `list`, `update`, `delete`, `start`, `stop`, `restart`, `deallocate`, `redeploy`, `get-instance-view` |
+| `azlocal vm extension` | `set`, `show`, `list`, `update`, `delete` |
 | `azlocal cosmosdb doc` | `create`, `show`, `list`, `delete` |
 | `azlocal servicebus queue` | `create`, `send`, `receive`, `delete` |
 | `azlocal servicebus topic` | `create`, `send`, `delete` |
