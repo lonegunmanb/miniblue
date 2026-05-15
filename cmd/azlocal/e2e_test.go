@@ -146,3 +146,138 @@ func TestStorageAccountMissingResourceGroup(t *testing.T) {
 		t.Fatal("expected error for missing --resource-group")
 	}
 }
+
+// --- network vnet subnet ---
+
+func TestNetworkVNetSubnetCreateAndShow(t *testing.T) {
+	ts := setupMiniblue()
+	defer ts.Close()
+
+	runAzlocal(ts, "network", "vnet", "create",
+		"--resource-group", "myRG", "--name", "vnet1",
+		"--address-prefix", "10.0.0.0/16")
+
+	createOut, _, code := runAzlocal(ts, "network", "vnet", "subnet", "create",
+		"--resource-group", "myRG", "--vnet-name", "vnet1",
+		"--name", "web", "--address-prefixes", "10.0.1.0/24")
+	if code != 0 {
+		t.Fatalf("subnet create failed: %s", createOut)
+	}
+	if !strings.Contains(createOut, "\"name\": \"web\"") || !strings.Contains(createOut, "10.0.1.0/24") {
+		t.Fatalf("expected subnet name and prefix in create output, got: %s", createOut)
+	}
+
+	showOut, _, _ := runAzlocal(ts, "network", "vnet", "subnet", "show",
+		"--resource-group", "myRG", "--vnet-name", "vnet1", "--name", "web")
+	if !strings.Contains(showOut, "Microsoft.Network/virtualNetworks/subnets") {
+		t.Fatalf("expected subnet type in show output, got: %s", showOut)
+	}
+}
+
+func TestNetworkVNetSubnetList(t *testing.T) {
+	ts := setupMiniblue()
+	defer ts.Close()
+
+	runAzlocal(ts, "network", "vnet", "create",
+		"--resource-group", "myRG", "--name", "vnet1",
+		"--address-prefix", "10.0.0.0/16")
+	runAzlocal(ts, "network", "vnet", "subnet", "create",
+		"--resource-group", "myRG", "--vnet-name", "vnet1",
+		"--name", "web", "--address-prefixes", "10.0.1.0/24")
+	runAzlocal(ts, "network", "vnet", "subnet", "create",
+		"--resource-group", "myRG", "--vnet-name", "vnet1",
+		"--name", "app", "--address-prefixes", "10.0.2.0/24")
+
+	out, _, _ := runAzlocal(ts, "network", "vnet", "subnet", "list",
+		"--resource-group", "myRG", "--vnet-name", "vnet1")
+	if !strings.Contains(out, "web") || !strings.Contains(out, "app") {
+		t.Fatalf("expected both subnets in list, got: %s", out)
+	}
+}
+
+func TestNetworkVNetSubnetUpdate(t *testing.T) {
+	ts := setupMiniblue()
+	defer ts.Close()
+
+	runAzlocal(ts, "network", "vnet", "create",
+		"--resource-group", "myRG", "--name", "vnet1",
+		"--address-prefix", "10.0.0.0/16")
+	runAzlocal(ts, "network", "vnet", "subnet", "create",
+		"--resource-group", "myRG", "--vnet-name", "vnet1",
+		"--name", "web", "--address-prefixes", "10.0.1.0/24")
+
+	out, _, code := runAzlocal(ts, "network", "vnet", "subnet", "update",
+		"--resource-group", "myRG", "--vnet-name", "vnet1",
+		"--name", "web", "--address-prefixes", "10.0.5.0/24")
+	if code != 0 {
+		t.Fatalf("subnet update failed: %s", out)
+	}
+	if !strings.Contains(out, "10.0.5.0/24") {
+		t.Fatalf("expected updated prefix in output, got: %s", out)
+	}
+}
+
+func TestNetworkVNetSubnetDelete(t *testing.T) {
+	ts := setupMiniblue()
+	defer ts.Close()
+
+	runAzlocal(ts, "network", "vnet", "create",
+		"--resource-group", "myRG", "--name", "vnet1",
+		"--address-prefix", "10.0.0.0/16")
+	runAzlocal(ts, "network", "vnet", "subnet", "create",
+		"--resource-group", "myRG", "--vnet-name", "vnet1",
+		"--name", "web", "--address-prefixes", "10.0.1.0/24")
+
+	out, _, _ := runAzlocal(ts, "network", "vnet", "subnet", "delete",
+		"--resource-group", "myRG", "--vnet-name", "vnet1", "--name", "web")
+	if !strings.Contains(strings.ToLower(out), "deleted") {
+		t.Fatalf("expected delete confirmation, got: %s", out)
+	}
+
+	showOut, _, _ := runAzlocal(ts, "network", "vnet", "subnet", "show",
+		"--resource-group", "myRG", "--vnet-name", "vnet1", "--name", "web")
+	if !strings.Contains(showOut, "404") && !strings.Contains(showOut, "NotFound") {
+		t.Fatalf("expected not-found after delete, got: %s", showOut)
+	}
+}
+
+func TestNetworkVNetSubnetUnknownAction(t *testing.T) {
+	ts := setupMiniblue()
+	defer ts.Close()
+
+	out, _, code := runAzlocal(ts, "network", "vnet", "subnet", "frobnicate",
+		"--resource-group", "myRG", "--vnet-name", "vnet1")
+	if code == 0 {
+		t.Fatalf("expected non-zero exit for unknown subnet action, got 0; output: %s", out)
+	}
+	if !strings.Contains(out, "Unknown subcommand") {
+		t.Fatalf("expected 'Unknown subcommand' in output, got: %s", out)
+	}
+}
+
+func TestNetworkVNetUnknownAction(t *testing.T) {
+	ts := setupMiniblue()
+	defer ts.Close()
+
+	out, _, code := runAzlocal(ts, "network", "vnet", "frobnicate",
+		"--resource-group", "myRG", "--name", "vnet1")
+	if code == 0 {
+		t.Fatalf("expected non-zero exit for unknown vnet action, got 0; output: %s", out)
+	}
+	if !strings.Contains(out, "Unknown subcommand") {
+		t.Fatalf("expected 'Unknown subcommand' in output, got: %s", out)
+	}
+}
+
+func TestNetworkUnknownResource(t *testing.T) {
+	ts := setupMiniblue()
+	defer ts.Close()
+
+	out, _, code := runAzlocal(ts, "network", "frobnicate", "list")
+	if code == 0 {
+		t.Fatalf("expected non-zero exit for unknown network resource, got 0; output: %s", out)
+	}
+	if !strings.Contains(out, "Unknown subcommand") {
+		t.Fatalf("expected 'Unknown subcommand' in output, got: %s", out)
+	}
+}
