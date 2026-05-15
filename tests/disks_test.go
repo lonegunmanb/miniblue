@@ -110,7 +110,7 @@ func TestManagedDiskUploadStateAndResourceGroupCascade(t *testing.T) {
 
 	av := "?api-version=2023-10-02"
 	subBase := ts.URL + "/subscriptions/sub1"
-	rg := subBase + "/resourcegroups/rgdisk"
+	rg := subBase + "/resourceGroups/rgdisk"
 	disks := subBase + "/resourceGroups/rgdisk/providers/Microsoft.Compute/disks"
 
 	resp := doRequest(t, "PUT", rg+av, `{"location":"eastus"}`)
