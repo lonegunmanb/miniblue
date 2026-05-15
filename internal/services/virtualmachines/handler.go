@@ -255,6 +255,9 @@ func sanitizeVM(vm map[string]interface{}, includeInstanceView bool) map[string]
 	}
 	delete(osProfile, "adminPassword")
 	linuxConfig := asMap(osProfile["linuxConfiguration"])
+	if linuxConfig == nil {
+		return out
+	}
 	ssh := asMap(linuxConfig["ssh"])
 	if ssh != nil {
 		delete(ssh, "publicKeys")
@@ -452,19 +455,35 @@ func (h *Handler) refreshReferences(sub string, vm map[string]interface{}) {
 
 func (h *Handler) clearReferences(sub string, vm map[string]interface{}) {
 	vmID, _ := vm["id"].(string)
-	for _, item := range h.store.ListByPrefix("nic:" + sub + ":") {
+	for _, k := range h.store.ListKeysByPrefix("nic:" + sub + ":") {
+		if !strings.HasPrefix(k, "nic:"+sub+":") {
+			continue
+		}
+		item, ok := h.store.Get(k)
+		if !ok {
+			continue
+		}
 		nic := asMap(item)
 		props := asMap(nic["properties"])
 		if strings.EqualFold(idFromRef(props["virtualMachine"]), vmID) {
 			delete(props, "virtualMachine")
+			h.store.Set(k, nic)
 		}
 	}
-	for _, item := range h.store.ListByPrefix("disk:" + sub + ":") {
+	for _, k := range h.store.ListKeysByPrefix("disk:" + sub + ":") {
+		if !strings.HasPrefix(k, "disk:"+sub+":") {
+			continue
+		}
+		item, ok := h.store.Get(k)
+		if !ok {
+			continue
+		}
 		disk := asMap(item)
 		props := asMap(disk["properties"])
 		if strings.EqualFold(firstString(props["managedBy"]), vmID) {
 			props["managedBy"] = ""
 			props["diskState"] = "Unattached"
+			h.store.Set(k, disk)
 		}
 	}
 }
@@ -484,7 +503,14 @@ func diskIDsFromStorageProfile(storageProfile map[string]interface{}) []string {
 }
 
 func (h *Handler) setReferenceOnMatchingResource(prefix, targetID, property string, value interface{}) {
-	for _, item := range h.store.ListByPrefix(prefix) {
+	for _, k := range h.store.ListKeysByPrefix(prefix) {
+		if !strings.HasPrefix(k, prefix) {
+			continue
+		}
+		item, ok := h.store.Get(k)
+		if !ok {
+			continue
+		}
 		resource := asMap(item)
 		id, _ := resource["id"].(string)
 		if !strings.EqualFold(id, targetID) {
@@ -492,6 +518,7 @@ func (h *Handler) setReferenceOnMatchingResource(prefix, targetID, property stri
 		}
 		props := asMap(resource["properties"])
 		props[property] = value
+		h.store.Set(k, resource)
 		return
 	}
 }
