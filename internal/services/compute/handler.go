@@ -174,6 +174,17 @@ func imageCatalog() []imageRef {
 	}
 }
 
+func LookupImage(publisher, offer, sku string) (osType string, ok bool) {
+	for _, img := range imageCatalog() {
+		if strings.EqualFold(img.publisher, publisher) &&
+			strings.EqualFold(img.offer, offer) &&
+			strings.EqualFold(img.sku, sku) {
+			return img.osType, true
+		}
+	}
+	return "", false
+}
+
 func catalogItem(r *http.Request, name string) map[string]interface{} {
 	return map[string]interface{}{
 		"name":     name,
