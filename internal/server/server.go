@@ -44,6 +44,7 @@ import (
 	"github.com/moabukar/miniblue/internal/services/storageaccounts"
 	"github.com/moabukar/miniblue/internal/services/subscriptions"
 	"github.com/moabukar/miniblue/internal/services/table"
+	"github.com/moabukar/miniblue/internal/services/virtualmachines"
 	"github.com/moabukar/miniblue/internal/store"
 )
 
@@ -209,6 +210,7 @@ func (s *Server) setupRoutes() {
 		{"dbmysql", func() { dbmysql.NewHandler(s.store).Register(s.router) }},
 		{"publicip", func() { publicip.NewHandler(s.store).Register(s.router) }},
 		{"disks", func() { disks.NewHandler(s.store).Register(s.router) }},
+		{"virtualmachines", func() { virtualmachines.NewHandler(s.store).Register(s.router) }},
 		{"networkinterfaces", func() { networkinterfaces.NewHandler(s.store).Register(s.router) }},
 		{"nsg", func() { nsg.NewHandler(s.store).Register(s.router) }},
 		{"loadbalancer", func() { loadbalancer.NewHandler(s.store).Register(s.router) }},
