@@ -104,7 +104,9 @@ func (h *Handler) ListImageVersions(w http.ResponseWriter, r *http.Request) {
 	for _, img := range imageCatalog() {
 		if img.publisher == publisher && img.offer == offer && img.sku == sku {
 			items = append(items, imageVersion(r, img, img.version))
-			items = append(items, imageVersion(r, img, "latest"))
+			if img.version != "latest" {
+				items = append(items, imageVersion(r, img, "latest"))
+			}
 			break
 		}
 	}
@@ -132,12 +134,11 @@ func writeJSON(w http.ResponseWriter, v interface{}) {
 }
 
 func computeSKU(name, resourceType string, capabilities []interface{}) map[string]interface{} {
-	return map[string]interface{}{
+	sku := map[string]interface{}{
 		"resourceType": resourceType,
 		"name":         name,
 		"tier":         "Standard",
 		"size":         name,
-		"family":       "standardDSv2Family",
 		"locations":    []interface{}{"eastus", "westus"},
 		"locationInfo": []interface{}{
 			map[string]interface{}{"location": "eastus", "zones": []interface{}{}},
@@ -145,6 +146,10 @@ func computeSKU(name, resourceType string, capabilities []interface{}) map[strin
 		},
 		"capabilities": capabilities,
 	}
+	if resourceType == "virtualMachines" {
+		sku["family"] = "standardDSv2Family"
+	}
+	return sku
 }
 
 func capability(name, value string) map[string]interface{} {

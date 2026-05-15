@@ -40,7 +40,8 @@ func TestComputeStaticCatalogEndpoints(t *testing.T) {
 	expectStatus(t, resp, 200)
 	offers := decodeJSON(t, resp)
 	resp.Body.Close()
-	if offers["value"].([]interface{})[0].(map[string]interface{})["name"] != "0001-com-ubuntu-server-jammy" {
+	offerItems := offers["value"].([]interface{})
+	if len(offerItems) == 0 || offerItems[0].(map[string]interface{})["name"] != "0001-com-ubuntu-server-jammy" {
 		t.Fatalf("expected Ubuntu offer, got %v", offers["value"])
 	}
 
@@ -48,7 +49,8 @@ func TestComputeStaticCatalogEndpoints(t *testing.T) {
 	expectStatus(t, resp, 200)
 	imageSkus := decodeJSON(t, resp)
 	resp.Body.Close()
-	if imageSkus["value"].([]interface{})[0].(map[string]interface{})["name"] != "22_04-lts" {
+	imageSkuItems := imageSkus["value"].([]interface{})
+	if len(imageSkuItems) == 0 || imageSkuItems[0].(map[string]interface{})["name"] != "22_04-lts" {
 		t.Fatalf("expected Ubuntu image sku, got %v", imageSkus["value"])
 	}
 
