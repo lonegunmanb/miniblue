@@ -1,6 +1,6 @@
 # Services Overview
 
-miniblue emulates 27 Azure services on a single port. All services use in-memory storage and require no authentication.
+miniblue emulates 28 Azure services on a single port. All services use in-memory storage and require no authentication.
 
 ## Service status
 
@@ -28,6 +28,7 @@ miniblue emulates 27 Azure services on a single port. All services use in-memory
 | [Kubernetes Service (AKS)](kubernetes-service.md) | `Microsoft.ContainerService` | Done | Yes | Yes (real k3s, opt-in) |
 | Public IP Addresses | `Microsoft.Network` | Done | Yes | -- |
 | Network Security Groups | `Microsoft.Network` | Done | Yes | -- |
+| Network Interfaces | `Microsoft.Network` | Done | Yes | -- |
 | Load Balancer | `Microsoft.Network` | Done | Yes | -- |
 | Application Gateway | `Microsoft.Network` | Done | Yes | -- |
 | Storage Accounts | `Microsoft.Storage` | Done | Yes | -- |
@@ -51,6 +52,7 @@ The following resources work with `hashicorp/azurerm` provider v3.x:
 | `azurerm_public_ip` | Public IP Addresses |
 | `azurerm_network_security_group` | Network Security Groups |
 | `azurerm_network_security_rule` | Network Security Groups |
+| `azurerm_network_interface` | Network Interfaces |
 | `azurerm_lb` | Load Balancer |
 | `azurerm_lb_backend_address_pool` | Load Balancer |
 | `azurerm_lb_probe` | Load Balancer |

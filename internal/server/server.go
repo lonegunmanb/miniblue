@@ -31,6 +31,7 @@ import (
 	"github.com/moabukar/miniblue/internal/services/loadbalancer"
 	"github.com/moabukar/miniblue/internal/services/metadata"
 	"github.com/moabukar/miniblue/internal/services/network"
+	"github.com/moabukar/miniblue/internal/services/networkinterfaces"
 	"github.com/moabukar/miniblue/internal/services/nsg"
 	"github.com/moabukar/miniblue/internal/services/publicip"
 	"github.com/moabukar/miniblue/internal/services/queue"
@@ -46,11 +47,11 @@ import (
 )
 
 type Server struct {
-	router      *chi.Mux
-	store       *store.Store
-	services    []string
-	aksHandler  *aks.Handler
-	routeTrie   *routeTrie
+	router     *chi.Mux
+	store      *store.Store
+	services   []string
+	aksHandler *aks.Handler
+	routeTrie  *routeTrie
 }
 
 func New() *Server {
@@ -206,6 +207,7 @@ func (s *Server) setupRoutes() {
 		{"sqldb", func() { sqldb.NewHandler(s.store).Register(s.router) }},
 		{"dbmysql", func() { dbmysql.NewHandler(s.store).Register(s.router) }},
 		{"publicip", func() { publicip.NewHandler(s.store).Register(s.router) }},
+		{"networkinterfaces", func() { networkinterfaces.NewHandler(s.store).Register(s.router) }},
 		{"nsg", func() { nsg.NewHandler(s.store).Register(s.router) }},
 		{"loadbalancer", func() { loadbalancer.NewHandler(s.store).Register(s.router) }},
 		{"appgw", func() { appgw.NewHandler(s.store).Register(s.router) }},
