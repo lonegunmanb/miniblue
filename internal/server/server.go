@@ -24,6 +24,7 @@ import (
 	"github.com/moabukar/miniblue/internal/services/dbmysql"
 	"github.com/moabukar/miniblue/internal/services/dbpostgres"
 	"github.com/moabukar/miniblue/internal/services/deployments"
+	"github.com/moabukar/miniblue/internal/services/disks"
 	"github.com/moabukar/miniblue/internal/services/dns"
 	"github.com/moabukar/miniblue/internal/services/eventgrid"
 	"github.com/moabukar/miniblue/internal/services/identity"
@@ -207,6 +208,7 @@ func (s *Server) setupRoutes() {
 		{"sqldb", func() { sqldb.NewHandler(s.store).Register(s.router) }},
 		{"dbmysql", func() { dbmysql.NewHandler(s.store).Register(s.router) }},
 		{"publicip", func() { publicip.NewHandler(s.store).Register(s.router) }},
+		{"disks", func() { disks.NewHandler(s.store).Register(s.router) }},
 		{"networkinterfaces", func() { networkinterfaces.NewHandler(s.store).Register(s.router) }},
 		{"nsg", func() { nsg.NewHandler(s.store).Register(s.router) }},
 		{"loadbalancer", func() { loadbalancer.NewHandler(s.store).Register(s.router) }},

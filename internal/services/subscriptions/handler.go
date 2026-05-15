@@ -95,6 +95,7 @@ var supportedProviders = []string{
 	"Microsoft.Resources",
 	"Microsoft.Storage",
 	"Microsoft.Network",
+	"Microsoft.Compute",
 	"Microsoft.KeyVault",
 	"Microsoft.DocumentDB",
 	"Microsoft.ServiceBus",
