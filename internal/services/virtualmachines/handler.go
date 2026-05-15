@@ -131,6 +131,22 @@ func firstString(values ...interface{}) string {
 	return ""
 }
 
+func firstNumber(values ...interface{}) float64 {
+	for _, v := range values {
+		switch n := v.(type) {
+		case float64:
+			if n != 0 {
+				return n
+			}
+		case int:
+			if n != 0 {
+				return float64(n)
+			}
+		}
+	}
+	return 0
+}
+
 func powerState(vm map[string]interface{}) string {
 	state, _ := vm["_powerState"].(string)
 	if state == "" {
@@ -274,17 +290,9 @@ func normalizeVMStorageProfile(sub, rg, name string, vmProps map[string]interfac
 		return
 	}
 
-	if diskSize, ok := osDisk["diskSizeGB"].(float64); !ok || diskSize == 0 {
-		defaultSize := float64(30)
+	if diskSize := firstNumber(osDisk["diskSizeGB"]); diskSize == 0 {
 		imageRef := asMap(storageProfile["imageReference"])
-		if imageRef != nil {
-			publisher, _ := imageRef["publisher"].(string)
-			offer, _ := imageRef["offer"].(string)
-			sku, _ := imageRef["sku"].(string)
-			if osType, ok := compute.LookupImage(publisher, offer, sku); ok && strings.EqualFold(osType, "Windows") {
-				defaultSize = 127
-			}
-		}
+		_, defaultSize := imageOSAndDefaultDiskSize(imageRef)
 		osDisk["diskSizeGB"] = defaultSize
 	}
 
@@ -303,6 +311,20 @@ func normalizeVMStorageProfile(sub, rg, name string, vmProps map[string]interfac
 	if firstString(managedDisk["id"]) == "" {
 		managedDisk["id"] = "/subscriptions/" + sub + "/resourceGroups/" + rg + "/providers/Microsoft.Compute/disks/" + diskName
 	}
+}
+
+func imageOSAndDefaultDiskSize(imageRef map[string]interface{}) (string, float64) {
+	publisher, _ := imageRef["publisher"].(string)
+	offer, _ := imageRef["offer"].(string)
+	sku, _ := imageRef["sku"].(string)
+	osType, ok := compute.LookupImage(publisher, offer, sku)
+	if ok && strings.EqualFold(osType, "Windows") {
+		if strings.Contains(strings.ToLower(sku), "smalldisk") {
+			return "Windows", 30
+		}
+		return "Windows", 127
+	}
+	return "Linux", 30
 }
 
 func normalizeAdditionalCapabilities(vmProps map[string]interface{}) {
@@ -359,7 +381,9 @@ func (h *Handler) CreateOrUpdate(w http.ResponseWriter, r *http.Request) {
 
 	k := h.key(sub, rg, name)
 	existing, exists := h.store.Get(k)
+	requestSuppliedManagedDiskID := requestHasManagedDiskID(input)
 	vm := buildResponse(sub, rg, name, input, asMap(existing))
+	h.ensureAutoManagedOSDisk(sub, rg, requestSuppliedManagedDiskID, vm)
 	h.store.Set(k, vm)
 	h.refreshReferences(sub, vm)
 	if exists {
@@ -390,7 +414,9 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		patch = map[string]interface{}{}
 	}
 	existingMap := asMap(existing)
+	requestSuppliedManagedDiskID := requestHasManagedDiskID(patch)
 	vm := buildResponse(sub, rg, name, mergePatch(existingMap, patch), existingMap)
+	h.ensureAutoManagedOSDisk(sub, rg, requestSuppliedManagedDiskID, vm)
 	h.store.Set(k, vm)
 	h.refreshReferences(sub, vm)
 	json.NewEncoder(w).Encode(sanitizeVM(vm, false))
@@ -422,9 +448,120 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.clearReferences(sub, asMap(v))
+	h.deleteAutoManagedOSDisk(sub, rg, asMap(v))
 	h.store.DeleteByPrefix(h.extensionKey(sub, rg, name, ""))
 	h.store.Delete(k)
 	w.WriteHeader(http.StatusAccepted)
+}
+
+func (h *Handler) ensureAutoManagedOSDisk(sub, rg string, requestSuppliedManagedDiskID bool, vm map[string]interface{}) {
+	vmProps := asMap(vm["properties"])
+	storageProfile := asMap(vmProps["storageProfile"])
+	osDisk := asMap(storageProfile["osDisk"])
+	if osDisk == nil || !strings.EqualFold(firstString(osDisk["createOption"]), "FromImage") {
+		return
+	}
+	if requestSuppliedManagedDiskID {
+		return
+	}
+
+	osDiskName := firstString(osDisk["name"])
+	if osDiskName == "" {
+		return
+	}
+	managedDisk := asMap(osDisk["managedDisk"])
+	managedDiskID := firstString(managedDisk["id"])
+	if managedDiskID == "" {
+		managedDiskID = "/subscriptions/" + sub + "/resourceGroups/" + rg + "/providers/Microsoft.Compute/disks/" + osDiskName
+	}
+	vmID := firstString(vm["id"])
+	diskKey := "disk:" + sub + ":" + rg + ":" + osDiskName
+	existingDisk := map[string]interface{}{}
+	if v, ok := h.store.Get(diskKey); ok {
+		existingDisk = asMap(v)
+		if owner := firstString(existingDisk["_autoCreatedBy"]); owner != "" && !strings.EqualFold(owner, vmID) {
+			return
+		}
+	}
+
+	location := firstString(vm["location"])
+	if location == "" {
+		location = "eastus"
+	}
+	imageRef := asMap(storageProfile["imageReference"])
+	osType, defaultSize := imageOSAndDefaultDiskSize(imageRef)
+	diskSizeGB := firstNumber(osDisk["diskSizeGB"])
+	if diskSizeGB == 0 {
+		diskSizeGB = defaultSize
+	}
+	diskSizeBytes := diskSizeGB * 1024 * 1024 * 1024
+	storageAccountType := firstString(managedDisk["storageAccountType"])
+	if storageAccountType == "" {
+		storageAccountType = "Standard_LRS"
+	}
+	existingDiskProps := asMap(existingDisk["properties"])
+	timeCreated := firstString(existingDiskProps["timeCreated"])
+	if timeCreated == "" {
+		timeCreated = time.Now().UTC().Format(time.RFC3339)
+	}
+	uniqueID := firstString(existingDiskProps["uniqueId"])
+	if uniqueID == "" {
+		uniqueID = fmt.Sprintf("miniblue-%s-%s-%s", sub, rg, osDiskName)
+	}
+
+	disk := map[string]interface{}{
+		"id":       managedDiskID,
+		"name":     osDiskName,
+		"type":     "Microsoft.Compute/disks",
+		"location": location,
+		"tags":     map[string]interface{}{},
+		"sku":      map[string]interface{}{"name": storageAccountType},
+		"etag":     "W/\"miniblue\"",
+		"properties": map[string]interface{}{
+			"provisioningState": "Succeeded",
+			"creationData": map[string]interface{}{
+				"createOption":   "FromImage",
+				"imageReference": recursiveCopy(imageRef),
+			},
+			"diskSizeGB":          diskSizeGB,
+			"diskSizeBytes":       diskSizeBytes,
+			"osType":              osType,
+			"timeCreated":         timeCreated,
+			"uniqueId":            uniqueID,
+			"encryption":          map[string]interface{}{"type": "EncryptionAtRestWithPlatformKey"},
+			"networkAccessPolicy": "AllowAll",
+			"publicNetworkAccess": "Enabled",
+			"managedBy":           vmID,
+			"diskState":           "Attached",
+		},
+		"_autoCreatedBy": vmID,
+	}
+	h.store.Set(diskKey, disk)
+}
+
+func requestHasManagedDiskID(request map[string]interface{}) bool {
+	props := asMap(request["properties"])
+	storageProfile := asMap(props["storageProfile"])
+	osDisk := asMap(storageProfile["osDisk"])
+	managedDisk := asMap(osDisk["managedDisk"])
+	return firstString(managedDisk["id"]) != ""
+}
+
+func (h *Handler) deleteAutoManagedOSDisk(sub, rg string, vm map[string]interface{}) {
+	vmID := firstString(vm["id"])
+	osDisk := asMap(asMap(asMap(vm["properties"])["storageProfile"])["osDisk"])
+	osDiskName := firstString(osDisk["name"])
+	if vmID == "" || osDiskName == "" {
+		return
+	}
+	diskKey := "disk:" + sub + ":" + rg + ":" + osDiskName
+	disk, ok := h.store.Get(diskKey)
+	if !ok {
+		return
+	}
+	if strings.EqualFold(firstString(asMap(disk)["_autoCreatedBy"]), vmID) {
+		h.store.Delete(diskKey)
+	}
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
