@@ -2,6 +2,7 @@ package compute
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 
@@ -130,7 +131,7 @@ func (h *Handler) GetImageVersion(w http.ResponseWriter, r *http.Request) {
 
 func writeJSON(w http.ResponseWriter, v interface{}) {
 	if err := json.NewEncoder(w).Encode(v); err != nil {
-		http.Error(w, "failed to write JSON response", http.StatusInternalServerError)
+		log.Printf("[compute] failed to write JSON response: %v", err)
 	}
 }
 
