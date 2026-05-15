@@ -48,21 +48,20 @@ func (h *Handler) ListVMSizes(w http.ResponseWriter, r *http.Request) {
 	}})
 }
 
-func (h *Handler) ListSKUs(w http.ResponseWriter, r *http.Request) {
-	loc := "eastus"
+func (h *Handler) ListSKUs(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, map[string]interface{}{"value": []interface{}{
-		computeSKU("Standard_DS1_v2", "virtualMachines", loc, []interface{}{
+		computeSKU("Standard_DS1_v2", "virtualMachines", []interface{}{
 			capability("vCPUs", "1"),
 			capability("MemoryGB", "3.5"),
 			capability("MaxDataDiskCount", "4"),
 		}),
-		computeSKU("Standard_DS2_v2", "virtualMachines", loc, []interface{}{
+		computeSKU("Standard_DS2_v2", "virtualMachines", []interface{}{
 			capability("vCPUs", "2"),
 			capability("MemoryGB", "7"),
 			capability("MaxDataDiskCount", "8"),
 		}),
-		computeSKU("Standard_LRS", "disks", loc, nil),
-		computeSKU("Premium_LRS", "disks", loc, nil),
+		computeSKU("Standard_LRS", "disks", nil),
+		computeSKU("Premium_LRS", "disks", nil),
 	}})
 }
 
@@ -106,6 +105,7 @@ func (h *Handler) ListImageVersions(w http.ResponseWriter, r *http.Request) {
 		if img.publisher == publisher && img.offer == offer && img.sku == sku {
 			items = append(items, imageVersion(r, img, img.version))
 			items = append(items, imageVersion(r, img, "latest"))
+			break
 		}
 	}
 	writeJSON(w, map[string]interface{}{"value": items})
@@ -131,15 +131,18 @@ func writeJSON(w http.ResponseWriter, v interface{}) {
 	}
 }
 
-func computeSKU(name, resourceType, location string, capabilities []interface{}) map[string]interface{} {
+func computeSKU(name, resourceType string, capabilities []interface{}) map[string]interface{} {
 	return map[string]interface{}{
 		"resourceType": resourceType,
 		"name":         name,
 		"tier":         "Standard",
 		"size":         name,
 		"family":       "standardDSv2Family",
-		"locations":    []interface{}{location},
-		"locationInfo": []interface{}{map[string]interface{}{"location": location, "zones": []interface{}{}}},
+		"locations":    []interface{}{"eastus", "westus"},
+		"locationInfo": []interface{}{
+			map[string]interface{}{"location": "eastus", "zones": []interface{}{}},
+			map[string]interface{}{"location": "westus", "zones": []interface{}{}},
+		},
 		"capabilities": capabilities,
 	}
 }
