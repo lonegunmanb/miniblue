@@ -40,6 +40,8 @@ func main() {
 		handleStorage(args[1:])
 	case "network":
 		handleNetwork(args[1:])
+	case "vm":
+		handleVM(args[1:])
 	case "cosmosdb":
 		handleCosmosDB(args[1:])
 	case "servicebus":
@@ -96,6 +98,7 @@ Commands:
   keyvault     Key Vault secret operations
   storage      Blob storage operations
   network      Virtual network operations
+  vm           Virtual machine operations
   cosmosdb     Cosmos DB operations
   servicebus   Service Bus operations
   appconfig    App Configuration operations
@@ -141,6 +144,13 @@ Examples:
   azlocal network vnet subnet list   --resource-group myRG --vnet-name myvnet
   azlocal network vnet subnet show   --resource-group myRG --vnet-name myvnet --name mysubnet
   azlocal network vnet subnet delete --resource-group myRG --vnet-name myvnet --name mysubnet
+
+  azlocal vm create --resource-group myRG --name myvm --image Ubuntu2204 --size Standard_B1s
+  azlocal vm list --resource-group myRG
+  azlocal vm show --resource-group myRG --name myvm
+  azlocal vm stop --resource-group myRG --name myvm
+  azlocal vm get-instance-view --resource-group myRG --name myvm
+  azlocal vm delete --resource-group myRG --name myvm
 
   azlocal dns zone create --resource-group myRG --name example.com
   azlocal dns record create --resource-group myRG --zone example.com --type A --name www --data '{"properties":{"TTL":300,"ARecords":[{"ipv4Address":"1.2.3.4"}]}}'
@@ -256,6 +266,23 @@ func doPut(path string, body interface{}) {
 		os.Exit(1)
 	}
 	req, _ := http.NewRequest("PUT", baseURL+armPath(path), bytes.NewReader(data))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+	printResponse(resp)
+}
+
+func doPatch(path string, body interface{}) {
+	data, err := json.Marshal(body)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: failed to encode request body: %v\n", err)
+		os.Exit(1)
+	}
+	req, _ := http.NewRequest("PATCH", baseURL+armPath(path), bytes.NewReader(data))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -611,6 +638,207 @@ func handleNetworkSubnet(args []string) {
 		fmt.Fprintf(os.Stderr, "Unknown subcommand: network vnet subnet %s\n", args[0])
 		os.Exit(1)
 	}
+}
+
+// --- Virtual Machines ---
+
+func handleVM(args []string) {
+	if len(args) == 0 {
+		fmt.Println("Usage: azlocal vm <create|show|list|delete|update|start|stop|restart|deallocate|redeploy|get-instance-view|extension> [flags]")
+		return
+	}
+	if args[0] == "extension" {
+		handleVMExtension(args[1:])
+		return
+	}
+
+	s := sub(args)
+	rg := getFlag(args, "resource-group")
+	base := "/subscriptions/" + s
+	if rg != "" {
+		base += "/resourceGroups/" + rg
+	}
+	base += "/providers/Microsoft.Compute/virtualMachines"
+
+	switch args[0] {
+	case "create":
+		if rg == "" {
+			fmt.Fprintln(os.Stderr, "Error: --resource-group is required")
+			os.Exit(1)
+		}
+		name := requireFlag(args, "name")
+		doPut(base+"/"+name, buildVMBody(args, name))
+	case "update":
+		if rg == "" {
+			fmt.Fprintln(os.Stderr, "Error: --resource-group is required")
+			os.Exit(1)
+		}
+		name := requireFlag(args, "name")
+		doPatch(base+"/"+name, buildVMBody(args, name))
+	case "list":
+		doGet(base)
+	case "show":
+		if rg == "" {
+			fmt.Fprintln(os.Stderr, "Error: --resource-group is required")
+			os.Exit(1)
+		}
+		name := requireFlag(args, "name")
+		if hasFlag(args, "show-details") {
+			doGet(base + "/" + name + "?$expand=instanceView")
+		} else {
+			doGet(base + "/" + name)
+		}
+	case "delete":
+		if rg == "" {
+			fmt.Fprintln(os.Stderr, "Error: --resource-group is required")
+			os.Exit(1)
+		}
+		name := requireFlag(args, "name")
+		doDelete(base + "/" + name)
+	case "get-instance-view":
+		if rg == "" {
+			fmt.Fprintln(os.Stderr, "Error: --resource-group is required")
+			os.Exit(1)
+		}
+		name := requireFlag(args, "name")
+		doGet(base + "/" + name + "/instanceView")
+	case "start", "restart", "deallocate", "redeploy":
+		if rg == "" {
+			fmt.Fprintln(os.Stderr, "Error: --resource-group is required")
+			os.Exit(1)
+		}
+		name := requireFlag(args, "name")
+		doPost(base+"/"+name+"/"+args[0], nil)
+	case "stop", "power-off", "poweroff":
+		if rg == "" {
+			fmt.Fprintln(os.Stderr, "Error: --resource-group is required")
+			os.Exit(1)
+		}
+		name := requireFlag(args, "name")
+		doPost(base+"/"+name+"/powerOff", nil)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown subcommand: vm %s\n", args[0])
+		os.Exit(1)
+	}
+}
+
+func buildVMBody(args []string, name string) map[string]interface{} {
+	location := getFlag(args, "location")
+	if location == "" {
+		location = "eastus"
+	}
+	props := map[string]interface{}{}
+	if size := getFlag(args, "size"); size != "" {
+		props["hardwareProfile"] = map[string]interface{}{"vmSize": size}
+	}
+	if image := getFlag(args, "image"); image != "" {
+		props["storageProfile"] = map[string]interface{}{
+			"imageReference": map[string]interface{}{"id": image},
+		}
+	}
+	osProfile := map[string]interface{}{"computerName": name}
+	if username := getFlag(args, "admin-username"); username != "" {
+		osProfile["adminUsername"] = username
+	}
+	if password := getFlag(args, "admin-password"); password != "" {
+		osProfile["adminPassword"] = password
+	}
+	props["osProfile"] = osProfile
+	if nics := firstNonEmpty(getFlag(args, "nics"), getFlag(args, "nic")); nics != "" {
+		props["networkProfile"] = map[string]interface{}{
+			"networkInterfaces": vmNICRefs(args, nics),
+		}
+	}
+	return map[string]interface{}{
+		"location":   location,
+		"properties": props,
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func vmNICRefs(args []string, nics string) []interface{} {
+	s := sub(args)
+	rg := requireFlag(args, "resource-group")
+	refs := []interface{}{}
+	for _, nic := range strings.Fields(strings.ReplaceAll(nics, ",", " ")) {
+		id := nic
+		if !strings.HasPrefix(id, "/") {
+			id = "/subscriptions/" + s + "/resourceGroups/" + rg + "/providers/Microsoft.Network/networkInterfaces/" + nic
+		}
+		refs = append(refs, map[string]interface{}{"id": id})
+	}
+	return refs
+}
+
+func handleVMExtension(args []string) {
+	if len(args) == 0 {
+		fmt.Println("Usage: azlocal vm extension <set|show|list|delete|update> [flags]")
+		return
+	}
+	rg := requireFlag(args, "resource-group")
+	vmName := requireFlag(args, "vm-name")
+	s := sub(args)
+	base := "/subscriptions/" + s + "/resourceGroups/" + rg +
+		"/providers/Microsoft.Compute/virtualMachines/" + vmName + "/extensions"
+
+	switch args[0] {
+	case "set":
+		name := requireFlag(args, "name")
+		doPut(base+"/"+name, buildVMExtensionBody(args))
+	case "update":
+		name := requireFlag(args, "name")
+		doPatch(base+"/"+name, buildVMExtensionBody(args))
+	case "show":
+		name := requireFlag(args, "name")
+		doGet(base + "/" + name)
+	case "list":
+		doGet(base)
+	case "delete":
+		name := requireFlag(args, "name")
+		doDelete(base + "/" + name)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown subcommand: vm extension %s\n", args[0])
+		os.Exit(1)
+	}
+}
+
+func buildVMExtensionBody(args []string) map[string]interface{} {
+	props := map[string]interface{}{}
+	for _, flag := range []string{"publisher", "type"} {
+		if v := getFlag(args, flag); v != "" {
+			props[flag] = v
+		}
+	}
+	if v := getFlag(args, "type-handler-version"); v != "" {
+		props["typeHandlerVersion"] = v
+	}
+	if settings := getFlag(args, "settings"); settings != "" {
+		var value interface{}
+		if json.Unmarshal([]byte(settings), &value) == nil {
+			props["settings"] = value
+		}
+	}
+	if settings := getFlag(args, "protected-settings"); settings != "" {
+		var value interface{}
+		if json.Unmarshal([]byte(settings), &value) == nil {
+			props["protectedSettings"] = value
+		}
+	}
+	body := map[string]interface{}{
+		"properties": props,
+	}
+	if location := getFlag(args, "location"); location != "" {
+		body["location"] = location
+	}
+	return body
 }
 
 // --- Cosmos DB ---
