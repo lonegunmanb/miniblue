@@ -15,15 +15,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/). Versions follow 
 - README comparison table service count bumped 26 to 27 (AKS shipped in v0.6.0)
 - CHANGELOG backfilled for v0.4.2 through v0.6.0 from each release's notes (#116)
 
-### CI
-- New AKS pipeline job that exercises the `:full` Docker image with a mounted docker socket, locking in the in-container real-backend path against future Dockerfile or alpine bumps (#114)
-
 ## [0.6.0] - 2026-05-01
 
 ### Added
 - **Azure Kubernetes Service (AKS) emulation** (#111, closes #50). `Microsoft.ContainerService/managedClusters` with two backends: stub (default, ARM only) and real (rancher/k3s in Docker, opt-in via `AKS_BACKEND=k3s`). `azlocal aks create/list/show/delete/get-credentials` commands. `get-credentials` merges into `~/.kube/config` like `az aks` does
 - **`full` Dockerfile target** that adds the docker CLI so AKS and ACI real backends work in-container with the host docker socket mounted
-- **Dedicated AKS CI pipeline** (`aks-e2e.yml`): real-backend k3s smoke (DinD on the runner) and a Terraform apply against the AKS example
 - Resource group cascade delete now cleans up child AKS resources
 
 ### Changed
