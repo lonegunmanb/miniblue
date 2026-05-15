@@ -16,6 +16,12 @@ type Handler struct {
 	store *store.Store
 }
 
+const (
+	fakeSASHost      = "https://miniblue.local"
+	fakeSASVersion   = "miniblue"
+	fakeSASSignature = "fake"
+)
+
 func NewHandler(s *store.Store) *Handler {
 	return &Handler{store: s}
 }
@@ -319,7 +325,7 @@ func (h *Handler) BeginGetAccess(w http.ResponseWriter, r *http.Request) {
 	}
 	id := resourceID(sub, rg, name)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"accessSAS": "https://miniblue.local" + id + "?sv=miniblue&sig=fake",
+		"accessSAS": fakeSASHost + id + "?sv=" + fakeSASVersion + "&sig=" + fakeSASSignature,
 	})
 }
 
