@@ -3,6 +3,7 @@ package compute
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/moabukar/miniblue/internal/azerr"
@@ -129,7 +130,7 @@ func (h *Handler) GetImageVersion(w http.ResponseWriter, r *http.Request) {
 
 func writeJSON(w http.ResponseWriter, v interface{}) {
 	if err := json.NewEncoder(w).Encode(v); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "failed to write JSON response", http.StatusInternalServerError)
 	}
 }
 
@@ -176,7 +177,7 @@ func catalogItem(r *http.Request, name string) map[string]interface{} {
 	return map[string]interface{}{
 		"name":     name,
 		"location": chi.URLParam(r, "location"),
-		"id":       r.URL.Path + "/" + name,
+		"id":       catalogID(r, name),
 	}
 }
 
@@ -187,7 +188,7 @@ func imageVersion(r *http.Request, img imageRef, version string) map[string]inte
 	return map[string]interface{}{
 		"name":     version,
 		"location": chi.URLParam(r, "location"),
-		"id":       r.URL.Path,
+		"id":       imageVersionID(r, img, version),
 		"properties": map[string]interface{}{
 			"storageProfile": map[string]interface{}{
 				"osDiskImage":    map[string]interface{}{"operatingSystem": img.osType},
@@ -195,4 +196,17 @@ func imageVersion(r *http.Request, img imageRef, version string) map[string]inte
 			},
 		},
 	}
+}
+
+func catalogID(r *http.Request, name string) string {
+	return strings.TrimRight(r.URL.Path, "/") + "/" + name
+}
+
+func imageVersionID(r *http.Request, img imageRef, version string) string {
+	return "/subscriptions/" + chi.URLParam(r, "subscriptionId") +
+		"/providers/Microsoft.Compute/locations/" + chi.URLParam(r, "location") +
+		"/publishers/" + img.publisher +
+		"/artifacttypes/vmimage/offers/" + img.offer +
+		"/skus/" + img.sku +
+		"/versions/" + version
 }
