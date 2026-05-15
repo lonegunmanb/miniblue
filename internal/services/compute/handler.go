@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/moabukar/miniblue/internal/azerr"
 	"github.com/moabukar/miniblue/internal/store"
 )
 
@@ -48,10 +49,7 @@ func (h *Handler) ListVMSizes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ListSKUs(w http.ResponseWriter, r *http.Request) {
-	loc := chi.URLParam(r, "location")
-	if loc == "" {
-		loc = "eastus"
-	}
+	loc := "eastus"
 	json.NewEncoder(w).Encode(map[string]interface{}{"value": []interface{}{
 		computeSKU("Standard_DS1_v2", "virtualMachines", loc, []interface{}{
 			capability("vCPUs", "1"),
@@ -124,7 +122,7 @@ func (h *Handler) GetImageVersion(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	json.NewEncoder(w).Encode(imageVersion(r, imageRef{publisher: publisher, offer: offer, sku: sku, osType: "Linux"}, version))
+	azerr.NotFound(w, "Microsoft.Compute/locations/publishers/artifacttypes/vmimage", publisher+"/"+offer+"/"+sku+"/"+version)
 }
 
 func computeSKU(name, resourceType, location string, capabilities []interface{}) map[string]interface{} {
