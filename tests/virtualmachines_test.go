@@ -11,16 +11,11 @@ func TestVirtualMachineLifecycleReferencesActionsAndSensitiveFields(t *testing.T
 	net := sub + "/resourceGroups/rg1/providers/Microsoft.Network"
 	compute := sub + "/resourceGroups/rg1/providers/Microsoft.Compute"
 	nicID := "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Network/networkInterfaces/nic1"
-	osDiskID := "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Compute/disks/osdisk1"
 	dataDiskID := "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Compute/disks/datadisk1"
 	vmID := "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1"
 
 	resp := doRequest(t, "PUT", net+"/networkInterfaces/nic1"+av,
 		`{"location":"eastus","properties":{"ipConfigurations":[{"name":"ipconfig1","properties":{"privateIPAddress":"10.0.0.10","privateIPAllocationMethod":"Static"}}]}}`)
-	expectStatus(t, resp, 201)
-	resp.Body.Close()
-	resp = doRequest(t, "PUT", compute+"/disks/osdisk1"+av,
-		`{"location":"eastus","properties":{"creationData":{"createOption":"Empty"},"diskSizeGB":32}}`)
 	expectStatus(t, resp, 201)
 	resp.Body.Close()
 	resp = doRequest(t, "PUT", compute+"/disks/datadisk1"+av,
@@ -35,7 +30,7 @@ func TestVirtualMachineLifecycleReferencesActionsAndSensitiveFields(t *testing.T
 			"hardwareProfile":{"vmSize":"Standard_B1s"},
 			"storageProfile":{
 				"imageReference":{"publisher":"Canonical","offer":"0001-com-ubuntu-server-jammy","sku":"22_04-lts","version":"latest"},
-				"osDisk":{"name":"osdisk1","createOption":"Attach","managedDisk":{"id":"` + osDiskID + `"}},
+				"osDisk":{"createOption":"FromImage"},
 				"dataDisks":[{"lun":0,"name":"datadisk1","createOption":"Attach","managedDisk":{"id":"` + dataDiskID + `"}}]
 			},
 			"osProfile":{
@@ -55,6 +50,8 @@ func TestVirtualMachineLifecycleReferencesActionsAndSensitiveFields(t *testing.T
 		t.Fatalf("expected VM id %s, got %v", vmID, vm["id"])
 	}
 	assertVMResponseShape(t, vm)
+	autoOSDisk := vm["properties"].(map[string]interface{})["storageProfile"].(map[string]interface{})["osDisk"].(map[string]interface{})
+	autoOSDiskName := autoOSDisk["name"].(string)
 
 	resp = doRequest(t, "GET", compute+"/virtualMachines/vm1"+av, "")
 	expectStatus(t, resp, 200)
@@ -70,7 +67,39 @@ func TestVirtualMachineLifecycleReferencesActionsAndSensitiveFields(t *testing.T
 		t.Fatalf("expected NIC virtualMachine reference %s, got %v", vmID, got)
 	}
 
-	for _, diskName := range []string{"osdisk1", "datadisk1"} {
+	resp = doRequest(t, "GET", compute+"/disks/"+autoOSDiskName+av, "")
+	expectStatus(t, resp, 200)
+	autoDisk := decodeJSON(t, resp)
+	resp.Body.Close()
+	autoDiskProps := autoDisk["properties"].(map[string]interface{})
+	if autoDiskProps["osType"] != "Linux" {
+		t.Fatalf("expected auto disk osType Linux, got %v", autoDiskProps["osType"])
+	}
+	if autoDiskProps["diskSizeGB"] != float64(30) {
+		t.Fatalf("expected auto disk diskSizeGB 30, got %v", autoDiskProps["diskSizeGB"])
+	}
+	if autoDiskProps["creationData"].(map[string]interface{})["createOption"] != "FromImage" {
+		t.Fatalf("expected auto disk createOption FromImage, got %v", autoDiskProps["creationData"])
+	}
+	if autoDiskProps["managedBy"] != vmID {
+		t.Fatalf("expected auto disk managedBy %s, got %v", vmID, autoDiskProps["managedBy"])
+	}
+	if autoDiskProps["diskState"] != "Attached" {
+		t.Fatalf("expected auto disk state Attached, got %v", autoDiskProps["diskState"])
+	}
+	if autoDisk["sku"].(map[string]interface{})["name"] != "Standard_LRS" {
+		t.Fatalf("expected auto disk sku.name Standard_LRS, got %v", autoDisk["sku"])
+	}
+
+	resp = doRequest(t, "GET", sub+"/providers/Microsoft.Compute/disks"+av, "")
+	expectStatus(t, resp, 200)
+	subDiskList := decodeJSON(t, resp)
+	resp.Body.Close()
+	if !containsDiskName(subDiskList["value"].([]interface{}), autoOSDiskName) {
+		t.Fatalf("expected subscription disk list to include auto os disk %s", autoOSDiskName)
+	}
+
+	for _, diskName := range []string{"datadisk1"} {
 		resp = doRequest(t, "GET", compute+"/disks/"+diskName+av, "")
 		expectStatus(t, resp, 200)
 		disk := decodeJSON(t, resp)
@@ -149,6 +178,9 @@ func TestVirtualMachineLifecycleReferencesActionsAndSensitiveFields(t *testing.T
 	expectStatus(t, resp, 202)
 	resp.Body.Close()
 	resp = doRequest(t, "GET", compute+"/virtualMachines/vm1"+av, "")
+	expectStatus(t, resp, 404)
+	resp.Body.Close()
+	resp = doRequest(t, "GET", compute+"/disks/"+autoOSDiskName+av, "")
 	expectStatus(t, resp, 404)
 	resp.Body.Close()
 	resp = doRequest(t, "GET", net+"/networkInterfaces/nic1"+av, "")
@@ -239,4 +271,64 @@ func TestVirtualMachineFromImageDefaults(t *testing.T) {
 	if additionalCapabilities["hibernationEnabled"] != false || additionalCapabilities["ultraSSDEnabled"] != false {
 		t.Fatalf("expected additionalCapabilities defaults to be false/false, got %v", additionalCapabilities)
 	}
+}
+
+func TestVirtualMachineDeleteDoesNotRemoveAttachedUserDisk(t *testing.T) {
+	ts := setupServer()
+	defer ts.Close()
+
+	av := "?api-version=2023-09-01"
+	sub := ts.URL + "/subscriptions/sub1"
+	net := sub + "/resourceGroups/rg1/providers/Microsoft.Network"
+	compute := sub + "/resourceGroups/rg1/providers/Microsoft.Compute"
+	nicID := "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Network/networkInterfaces/nic-attach"
+	userOSDiskID := "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Compute/disks/user-osdisk"
+
+	resp := doRequest(t, "PUT", net+"/networkInterfaces/nic-attach"+av,
+		`{"location":"eastus","properties":{"ipConfigurations":[{"name":"ipconfig1","properties":{"privateIPAllocationMethod":"Dynamic"}}]}}`)
+	expectStatus(t, resp, 201)
+	resp.Body.Close()
+
+	resp = doRequest(t, "PUT", compute+"/disks/user-osdisk"+av,
+		`{"location":"eastus","properties":{"creationData":{"createOption":"Empty"},"diskSizeGB":64}}`)
+	expectStatus(t, resp, 201)
+	resp.Body.Close()
+
+	resp = doRequest(t, "PUT", compute+"/virtualMachines/vm-attach"+av, `{
+		"location":"eastus",
+		"properties":{
+			"storageProfile":{
+				"osDisk":{"name":"user-osdisk","createOption":"Attach","managedDisk":{"id":"`+userOSDiskID+`"}}
+			},
+			"osProfile":{"computerName":"vm-attach","adminUsername":"azureuser"},
+			"networkProfile":{"networkInterfaces":[{"id":"`+nicID+`"}]}
+		}
+	}`)
+	expectStatus(t, resp, 201)
+	resp.Body.Close()
+
+	resp = doRequest(t, "DELETE", compute+"/virtualMachines/vm-attach"+av, "")
+	expectStatus(t, resp, 202)
+	resp.Body.Close()
+
+	resp = doRequest(t, "GET", compute+"/disks/user-osdisk"+av, "")
+	expectStatus(t, resp, 200)
+	disk := decodeJSON(t, resp)
+	resp.Body.Close()
+	props := disk["properties"].(map[string]interface{})
+	if managedBy, _ := props["managedBy"].(string); managedBy != "" {
+		t.Fatalf("expected attached user disk managedBy cleared after VM delete, got %v", props["managedBy"])
+	}
+	if props["diskState"] != "Unattached" {
+		t.Fatalf("expected attached user disk to remain and be detached, got state=%v", props["diskState"])
+	}
+}
+
+func containsDiskName(items []interface{}, name string) bool {
+	for _, item := range items {
+		if disk, ok := item.(map[string]interface{}); ok && disk["name"] == name {
+			return true
+		}
+	}
+	return false
 }
