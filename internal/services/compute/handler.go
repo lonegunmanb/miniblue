@@ -28,7 +28,7 @@ func (h *Handler) Register(r chi.Router) {
 }
 
 func (h *Handler) ListVMSizes(w http.ResponseWriter, r *http.Request) {
-	json.NewEncoder(w).Encode(map[string]interface{}{"value": []interface{}{
+	writeJSON(w, map[string]interface{}{"value": []interface{}{
 		map[string]interface{}{
 			"name":                 "Standard_DS1_v2",
 			"numberOfCores":        1,
@@ -50,7 +50,7 @@ func (h *Handler) ListVMSizes(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) ListSKUs(w http.ResponseWriter, r *http.Request) {
 	loc := "eastus"
-	json.NewEncoder(w).Encode(map[string]interface{}{"value": []interface{}{
+	writeJSON(w, map[string]interface{}{"value": []interface{}{
 		computeSKU("Standard_DS1_v2", "virtualMachines", loc, []interface{}{
 			capability("vCPUs", "1"),
 			capability("MemoryGB", "3.5"),
@@ -71,7 +71,7 @@ func (h *Handler) ListPublishers(w http.ResponseWriter, r *http.Request) {
 	for _, img := range imageCatalog() {
 		items = append(items, catalogItem(r, img.publisher))
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{"value": items})
+	writeJSON(w, map[string]interface{}{"value": items})
 }
 
 func (h *Handler) ListOffers(w http.ResponseWriter, r *http.Request) {
@@ -82,7 +82,7 @@ func (h *Handler) ListOffers(w http.ResponseWriter, r *http.Request) {
 			items = append(items, catalogItem(r, img.offer))
 		}
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{"value": items})
+	writeJSON(w, map[string]interface{}{"value": items})
 }
 
 func (h *Handler) ListImageSKUs(w http.ResponseWriter, r *http.Request) {
@@ -94,7 +94,7 @@ func (h *Handler) ListImageSKUs(w http.ResponseWriter, r *http.Request) {
 			items = append(items, catalogItem(r, img.sku))
 		}
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{"value": items})
+	writeJSON(w, map[string]interface{}{"value": items})
 }
 
 func (h *Handler) ListImageVersions(w http.ResponseWriter, r *http.Request) {
@@ -108,7 +108,7 @@ func (h *Handler) ListImageVersions(w http.ResponseWriter, r *http.Request) {
 			items = append(items, imageVersion(r, img, "latest"))
 		}
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{"value": items})
+	writeJSON(w, map[string]interface{}{"value": items})
 }
 
 func (h *Handler) GetImageVersion(w http.ResponseWriter, r *http.Request) {
@@ -118,11 +118,17 @@ func (h *Handler) GetImageVersion(w http.ResponseWriter, r *http.Request) {
 	version := chi.URLParam(r, "versionName")
 	for _, img := range imageCatalog() {
 		if img.publisher == publisher && img.offer == offer && img.sku == sku {
-			json.NewEncoder(w).Encode(imageVersion(r, img, version))
+			writeJSON(w, imageVersion(r, img, version))
 			return
 		}
 	}
 	azerr.NotFound(w, "Microsoft.Compute/locations/publishers/artifacttypes/vmimage", publisher+"/"+offer+"/"+sku+"/"+version)
+}
+
+func writeJSON(w http.ResponseWriter, v interface{}) {
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func computeSKU(name, resourceType, location string, capabilities []interface{}) map[string]interface{} {
