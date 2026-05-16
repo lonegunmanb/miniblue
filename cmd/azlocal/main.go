@@ -102,7 +102,7 @@ Usage:
 
 Commands:
   group        Resource group operations
-  keyvault     Key Vault secret operations
+  keyvault     Key Vault vault and secret operations
   storage      Blob storage operations
   network      Virtual network operations
   vm           Virtual machine operations
@@ -133,6 +133,10 @@ Examples:
   azlocal group show --name myRG --subscription sub1
   azlocal group delete --name myRG --subscription sub1
 
+  azlocal keyvault vault create --resource-group myRG --name myvault --location eastus
+  azlocal keyvault vault list --resource-group myRG
+  azlocal keyvault vault show --resource-group myRG --name myvault
+  azlocal keyvault vault delete --resource-group myRG --name myvault
   azlocal keyvault secret set --vault myvault --name dbpass --value secret123
   azlocal keyvault secret show --vault myvault --name dbpass
   azlocal keyvault secret list --vault myvault
@@ -430,15 +434,72 @@ func handleGroup(args []string) {
 // --- Key Vault ---
 
 func handleKeyVault(args []string) {
-	if len(args) < 2 {
+	if len(args) < 1 {
+		fmt.Println("Usage: azlocal keyvault <vault|secret> <subcommand> [flags]")
+		return
+	}
+	switch args[0] {
+	case "vault":
+		handleKeyVaultVault(args[1:])
+	case "secret":
+		handleKeyVaultSecret(args[1:])
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown subcommand: keyvault %s\n", args[0])
+	}
+}
+
+func handleKeyVaultVault(args []string) {
+	if len(args) < 1 {
+		fmt.Println("Usage: azlocal keyvault vault <create|show|list|delete|update> [flags]")
+		return
+	}
+	s := sub(args)
+	rg := requireFlag(args, "resource-group")
+	switch args[0] {
+	case "create":
+		name := requireFlag(args, "name")
+		location := getFlag(args, "location")
+		if location == "" {
+			location = "eastus"
+		}
+		body := map[string]interface{}{
+			"location": location,
+			"tags":     parseTags(getFlag(args, "tags")),
+			"properties": map[string]interface{}{
+				"tenantId":                  "00000000-0000-0000-0000-000000000000",
+				"sku":                       map[string]interface{}{"family": "A", "name": "standard"},
+				"accessPolicies":            []interface{}{},
+				"enableSoftDelete":          true,
+				"softDeleteRetentionInDays": 90,
+			},
+		}
+		doPut("/subscriptions/"+s+"/resourceGroups/"+rg+"/providers/Microsoft.KeyVault/vaults/"+name, body)
+	case "update":
+		name := requireFlag(args, "name")
+		body := map[string]interface{}{}
+		if tags := getFlag(args, "tags"); tags != "" {
+			body["tags"] = parseTags(tags)
+		}
+		doPatch("/subscriptions/"+s+"/resourceGroups/"+rg+"/providers/Microsoft.KeyVault/vaults/"+name, body)
+	case "show":
+		name := requireFlag(args, "name")
+		doGet("/subscriptions/" + s + "/resourceGroups/" + rg + "/providers/Microsoft.KeyVault/vaults/" + name)
+	case "list":
+		doGet("/subscriptions/" + s + "/resourceGroups/" + rg + "/providers/Microsoft.KeyVault/vaults")
+	case "delete":
+		name := requireFlag(args, "name")
+		doDelete("/subscriptions/" + s + "/resourceGroups/" + rg + "/providers/Microsoft.KeyVault/vaults/" + name)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown subcommand: keyvault vault %s\n", args[0])
+	}
+}
+
+func handleKeyVaultSecret(args []string) {
+	if len(args) < 1 {
 		fmt.Println("Usage: azlocal keyvault secret <set|show|list|delete> [flags]")
 		return
 	}
-	if args[0] != "secret" {
-		fmt.Fprintf(os.Stderr, "Unknown subcommand: keyvault %s\n", args[0])
-		return
-	}
-	switch args[1] {
+	switch args[0] {
 	case "set":
 		vault := requireFlag(args, "vault")
 		name := requireFlag(args, "name")
@@ -455,6 +516,8 @@ func handleKeyVault(args []string) {
 		vault := requireFlag(args, "vault")
 		name := requireFlag(args, "name")
 		doDelete("/keyvault/" + vault + "/secrets/" + name)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown subcommand: keyvault secret %s\n", args[0])
 	}
 }
 

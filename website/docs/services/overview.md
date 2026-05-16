@@ -10,7 +10,7 @@ miniblue emulates 32 Azure services on a single port. All services use in-memory
 | [Blob Storage](blob-storage.md) | `Microsoft.Storage` | Done | -- | Yes |
 | Table Storage | `Microsoft.Storage` | Done | -- | Yes |
 | Queue Storage | `Microsoft.Storage` | Done | -- | Yes |
-| [Key Vault](key-vault.md) | `Microsoft.KeyVault` | Done | -- | Yes |
+| [Key Vault](key-vault.md) | `Microsoft.KeyVault` | Done | Yes | Yes |
 | [Cosmos DB](cosmos-db.md) | `Microsoft.DocumentDB` | Done | -- | Yes |
 | [Service Bus](service-bus.md) | `Microsoft.ServiceBus` | Done | -- | Yes |
 | Azure Functions | `Microsoft.Web` | Done | Yes | -- |
@@ -71,6 +71,8 @@ The following resources work with `hashicorp/azurerm` provider v3.x:
 | `azurerm_user_assigned_identity` | Managed Identity |
 | `azurerm_role_definition` | RBAC |
 | `azurerm_role_assignment` | RBAC |
+| `azurerm_key_vault` | Key Vault |
+| `azurerm_key_vault_secret` | Key Vault |
 | `azurerm_cosmosdb_table` | Cosmos DB |
 
 See the [Terraform guide](../guides/terraform.md) for a full working example.

@@ -97,3 +97,88 @@ func TestKeyVaultDataPlaneVaultAzureNetHostCRUD(t *testing.T) {
 	defer resp6.Body.Close()
 	expectStatus(t, resp6, 200)
 }
+
+func TestKeyVaultARMVaultCRUDAndAccessPolicies(t *testing.T) {
+	ts := setupServer()
+	defer ts.Close()
+
+	const sub = "00000000-0000-0000-0000-000000000000"
+	base := ts.URL + "/subscriptions/" + sub + "/resourceGroups/rg1/providers/Microsoft.KeyVault/vaults/kvtest?api-version=2023-07-01"
+
+	resp := doRequest(t, "PUT", base, `{
+		"location":"eastus",
+		"tags":{"env":"test"},
+		"properties":{
+			"tenantId":"00000000-0000-0000-0000-000000000000",
+			"sku":{"family":"A","name":"standard"},
+			"enableRbacAuthorization":true
+		}
+	}`)
+	defer resp.Body.Close()
+	expectStatus(t, resp, 201)
+	if resp.Header.Get("Azure-AsyncOperation") == "" {
+		t.Fatal("expected Azure-AsyncOperation header")
+	}
+	vault := decodeJSON(t, resp)
+	if vault["id"] != "/subscriptions/"+sub+"/resourceGroups/rg1/providers/Microsoft.KeyVault/vaults/kvtest" {
+		t.Fatalf("unexpected id: %v", vault["id"])
+	}
+	props := vault["properties"].(map[string]interface{})
+	if props["vaultUri"] != "https://kvtest.vault.azure.net/" || props["provisioningState"] != "Succeeded" {
+		t.Fatalf("unexpected properties: %v", props)
+	}
+
+	resp = doRequest(t, "PATCH", base, `{"tags":{"env":"prod"},"properties":{"enabledForDeployment":true}}`)
+	defer resp.Body.Close()
+	expectStatus(t, resp, 200)
+	vault = decodeJSON(t, resp)
+	if vault["tags"].(map[string]interface{})["env"] != "prod" {
+		t.Fatalf("patch did not update tags: %v", vault["tags"])
+	}
+
+	policyBody := `{"properties":{"accessPolicies":[{"tenantId":"00000000-0000-0000-0000-000000000000","objectId":"11111111-1111-1111-1111-111111111111","permissions":{"secrets":["get","list"]}}]}}`
+	resp = doRequest(t, "PUT", strings.Replace(base, "?api-version=2023-07-01", "/accessPolicies/add?api-version=2023-07-01", 1), policyBody)
+	defer resp.Body.Close()
+	expectStatus(t, resp, 200)
+	vault = decodeJSON(t, resp)
+	props = vault["properties"].(map[string]interface{})
+	if len(props["accessPolicies"].([]interface{})) != 1 {
+		t.Fatalf("expected one access policy, got %v", props["accessPolicies"])
+	}
+
+	resp = doRequest(t, "GET", ts.URL+"/subscriptions/"+sub+"/resourceGroups/rg1/providers/Microsoft.KeyVault/vaults?api-version=2023-07-01", "")
+	defer resp.Body.Close()
+	expectStatus(t, resp, 200)
+	list := decodeJSON(t, resp)
+	if len(list["value"].([]interface{})) != 1 {
+		t.Fatalf("expected one RG vault, got %v", list)
+	}
+
+	resp = doRequest(t, "GET", ts.URL+"/subscriptions/"+sub+"/providers/Microsoft.KeyVault/vaults?api-version=2023-07-01", "")
+	defer resp.Body.Close()
+	expectStatus(t, resp, 200)
+	list = decodeJSON(t, resp)
+	if len(list["value"].([]interface{})) != 1 {
+		t.Fatalf("expected one subscription vault, got %v", list)
+	}
+
+	resp = doRequest(t, "POST", ts.URL+"/subscriptions/"+sub+"/providers/Microsoft.KeyVault/checkNameAvailability?api-version=2023-07-01", `{"name":"kvtest","type":"Microsoft.KeyVault/vaults"}`)
+	defer resp.Body.Close()
+	expectStatus(t, resp, 200)
+	availability := decodeJSON(t, resp)
+	if availability["nameAvailable"] != false || availability["reason"] != "AlreadyExists" {
+		t.Fatalf("expected unavailable name, got %v", availability)
+	}
+
+	resp = doRequest(t, "DELETE", base, "")
+	defer resp.Body.Close()
+	expectStatus(t, resp, 202)
+
+	resp = doRequest(t, "GET", base, "")
+	defer resp.Body.Close()
+	expectStatus(t, resp, 404)
+
+	resp = doRequest(t, "GET", ts.URL+"/subscriptions/"+sub+"/providers/Microsoft.KeyVault/locations/eastus/deletedVaults/kvtest?api-version=2023-07-01", "")
+	defer resp.Body.Close()
+	expectStatus(t, resp, 200)
+}
