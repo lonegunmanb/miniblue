@@ -339,7 +339,7 @@ func normalizeAdditionalCapabilities(vmProps map[string]interface{}) {
 	// echoes back exactly what was PUT for additionalCapabilities, so
 	// miniblue must do the same to avoid false drift for clients that
 	// rely on key presence/absence semantics.
-	if additionalCapabilities == nil || len(additionalCapabilities) == 0 {
+	if len(additionalCapabilities) == 0 {
 		delete(vmProps, "additionalCapabilities")
 		return
 	}
