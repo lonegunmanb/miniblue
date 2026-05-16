@@ -332,6 +332,18 @@ func doPutRaw(path string, contentType string, data []byte) {
 	}
 }
 
+func doPutRawResponse(path string, contentType string, data []byte) {
+	req, _ := http.NewRequest("PUT", baseURL+armPath(path), bytes.NewReader(data))
+	req.Header.Set("Content-Type", contentType)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+	printResponse(resp)
+}
+
 func doDelete(path string) {
 	req, _ := http.NewRequest("DELETE", baseURL+armPath(path), nil)
 	resp, err := http.DefaultClient.Do(req)
@@ -523,7 +535,7 @@ func handleStorageBlob(args []string) {
 
 func handleStorageAccount(args []string) {
 	if len(args) == 0 {
-		fmt.Println(`Usage: azlocal storage account <create|list|show|delete|list-keys> [flags]`)
+		fmt.Println(`Usage: azlocal storage account <create|list|show|delete|list-keys|management-policy> [flags]`)
 		return
 	}
 	rg := requireFlag(args, "resource-group")
@@ -559,9 +571,56 @@ func handleStorageAccount(args []string) {
 	case "list-keys":
 		name := requireFlag(args, "name")
 		doPost(base+"/"+name+"/listKeys", nil)
+	case "management-policy":
+		handleStorageAccountManagementPolicy(args[1:], base)
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown subcommand: storage account %s\n", args[0])
 	}
+}
+
+func handleStorageAccountManagementPolicy(args []string, accountBase string) {
+	if len(args) == 0 {
+		fmt.Println(`Usage: azlocal storage account management-policy <create|update|show|delete> [flags]`)
+		return
+	}
+
+	account := getFlag(args, "account-name")
+	if account == "" {
+		account = requireFlag(args, "name")
+	}
+	path := accountBase + "/" + account + "/managementPolicies/default"
+
+	switch args[0] {
+	case "create", "update":
+		policy := requireFlag(args, "policy")
+		doPutRawResponse(path, "application/json", readPolicyJSON(policy))
+	case "show":
+		doGet(path)
+	case "delete":
+		doDelete(path)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown subcommand: storage account management-policy %s\n", args[0])
+	}
+}
+
+func readPolicyJSON(policy string) []byte {
+	if strings.HasPrefix(policy, "@") {
+		data, err := os.ReadFile(strings.TrimPrefix(policy, "@"))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading policy: %v\n", err)
+			os.Exit(1)
+		}
+		return data
+	}
+	if _, err := os.Stat(policy); err == nil {
+		data, err := os.ReadFile(policy)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading policy: %v\n", err)
+			os.Exit(1)
+		}
+		return data
+	}
+	return []byte(policy)
 }
 
 // --- Network ---
