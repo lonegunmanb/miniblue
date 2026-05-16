@@ -147,6 +147,57 @@ func TestStorageAccountMissingResourceGroup(t *testing.T) {
 	}
 }
 
+func TestIdentityCreateShowUpdateListDelete(t *testing.T) {
+	ts := setupMiniblue()
+	defer ts.Close()
+
+	createOut, _, code := runAzlocal(ts, "identity", "create",
+		"--resource-group", "myRG",
+		"--name", "id1",
+		"--location", "westus2",
+		"--tags", "env=test")
+	if code != 0 {
+		t.Fatalf("identity create failed: %s", createOut)
+	}
+	if !strings.Contains(createOut, "\"name\": \"id1\"") ||
+		!strings.Contains(createOut, "Microsoft.ManagedIdentity/userAssignedIdentities") ||
+		!strings.Contains(createOut, "principalId") ||
+		!strings.Contains(createOut, "clientId") ||
+		!strings.Contains(createOut, "tenantId") {
+		t.Fatalf("expected identity details in create output, got: %s", createOut)
+	}
+
+	showOut, _, _ := runAzlocal(ts, "identity", "show",
+		"--resource-group", "myRG",
+		"--name", "id1")
+	if !strings.Contains(showOut, "\"name\": \"id1\"") {
+		t.Fatalf("expected identity name in show output, got: %s", showOut)
+	}
+
+	updateOut, _, code := runAzlocal(ts, "identity", "update",
+		"--resource-group", "myRG",
+		"--name", "id1",
+		"--tags", "env=patched")
+	if code != 0 {
+		t.Fatalf("identity update failed: %s", updateOut)
+	}
+	if !strings.Contains(updateOut, "\"env\": \"patched\"") {
+		t.Fatalf("expected patched tag, got: %s", updateOut)
+	}
+
+	listOut, _, _ := runAzlocal(ts, "identity", "list", "--resource-group", "myRG")
+	if !strings.Contains(listOut, "\"name\": \"id1\"") {
+		t.Fatalf("expected identity in list output, got: %s", listOut)
+	}
+
+	deleteOut, _, _ := runAzlocal(ts, "identity", "delete",
+		"--resource-group", "myRG",
+		"--name", "id1")
+	if !strings.Contains(strings.ToLower(deleteOut), "deleted") {
+		t.Fatalf("expected delete confirmation, got: %s", deleteOut)
+	}
+}
+
 // --- vm ---
 
 func TestVMCreateShowListDelete(t *testing.T) {
