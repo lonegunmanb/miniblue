@@ -118,7 +118,7 @@ docker run -p 8080:8080 -p 8443:8443 \
 To access the generated certificate from the host, mount the cert directory:
 
 ```bash
-docker run -p 4566:4566 -p 4567:4567 \
+docker run -p 4566:4566 -p 443:4567 -p 4567:4567 \
   -v ~/.miniblue:/root/.miniblue \
   moabukar/miniblue:latest
 ```
