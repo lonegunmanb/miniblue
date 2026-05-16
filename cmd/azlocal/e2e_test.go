@@ -198,6 +198,70 @@ func TestIdentityCreateShowUpdateListDelete(t *testing.T) {
 	}
 }
 
+func TestRoleDefinitionListAndShow(t *testing.T) {
+	ts := setupMiniblue()
+	defer ts.Close()
+
+	listOut, _, code := runAzlocal(ts, "role", "definition", "list",
+		"--name", "Storage Blob Data Contributor")
+	if code != 0 {
+		t.Fatalf("role definition list failed: %s", listOut)
+	}
+	if !strings.Contains(listOut, "Storage Blob Data Contributor") ||
+		!strings.Contains(listOut, "ba92f5b4-2d11-453d-a403-e96b0029c9fe") {
+		t.Fatalf("expected filtered built-in role in list output, got: %s", listOut)
+	}
+
+	showOut, _, code := runAzlocal(ts, "role", "definition", "show",
+		"--name", "Reader")
+	if code != 0 {
+		t.Fatalf("role definition show failed: %s", showOut)
+	}
+	if !strings.Contains(showOut, "\"roleName\": \"Reader\"") ||
+		!strings.Contains(showOut, "Microsoft.Authorization/roleDefinitions") {
+		t.Fatalf("expected Reader role definition in show output, got: %s", showOut)
+	}
+}
+
+func TestRoleAssignmentCreateListDelete(t *testing.T) {
+	ts := setupMiniblue()
+	defer ts.Close()
+
+	scope := "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/myRG"
+	name := "11111111-1111-1111-1111-111111111111"
+	createOut, _, code := runAzlocal(ts, "role", "assignment", "create",
+		"--scope", scope,
+		"--name", name,
+		"--assignee", "principal-1",
+		"--role", "Reader")
+	if code != 0 {
+		t.Fatalf("role assignment create failed: %s", createOut)
+	}
+	if !strings.Contains(createOut, "\"principalId\": \"principal-1\"") ||
+		!strings.Contains(createOut, "acdd72a7-3385-48ef-bd42-f606fba81ae7") ||
+		!strings.Contains(createOut, scope) {
+		t.Fatalf("expected role assignment details in create output, got: %s", createOut)
+	}
+
+	listOut, _, code := runAzlocal(ts, "role", "assignment", "list", "--scope", scope)
+	if code != 0 {
+		t.Fatalf("role assignment list failed: %s", listOut)
+	}
+	if !strings.Contains(listOut, name) || !strings.Contains(listOut, "principal-1") {
+		t.Fatalf("expected role assignment in list output, got: %s", listOut)
+	}
+
+	deleteOut, _, code := runAzlocal(ts, "role", "assignment", "delete",
+		"--scope", scope,
+		"--name", name)
+	if code != 0 {
+		t.Fatalf("role assignment delete failed: %s", deleteOut)
+	}
+	if !strings.Contains(strings.ToLower(deleteOut), "deleted") {
+		t.Fatalf("expected delete confirmation, got: %s", deleteOut)
+	}
+}
+
 // --- vm ---
 
 func TestVMCreateShowListDelete(t *testing.T) {
