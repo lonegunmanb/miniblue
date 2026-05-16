@@ -300,6 +300,60 @@ azlocal functionapp delete --name my-func --resource-group myRG
 
 ---
 
+### identity (User-Assigned Managed Identities)
+
+```bash
+azlocal identity create --resource-group myRG --name myid --location eastus
+azlocal identity list   --resource-group myRG
+azlocal identity show   --resource-group myRG --name myid
+azlocal identity update --resource-group myRG --name myid --tags "env=prod"
+azlocal identity delete --resource-group myRG --name myid
+```
+
+---
+
+### role (Azure RBAC)
+
+Role assignments and definitions are stored but **never enforced** — every
+other miniblue service still serves every request without authorization
+checks. The commands exist so Terraform's `azurerm_role_assignment` and
+`az role` workflows plan and apply cleanly against miniblue.
+
+```bash
+# Role assignments
+azlocal role assignment create --assignee 11111111-1111-1111-1111-111111111111 \
+  --role Contributor --resource-group myRG
+azlocal role assignment list   --resource-group myRG
+azlocal role assignment delete --name <assignment-guid> --resource-group myRG
+
+# Role definitions (a fixed catalog of built-in roles is always available)
+azlocal role definition list
+azlocal role definition show --name Reader
+azlocal role definition create --name MyCustomRole \
+  --description "Read storage accounts"
+```
+
+When `--name` is omitted on `role assignment create`, azlocal derives a
+deterministic GUID from `{scope, principalId, roleDefinitionId}` so repeated
+applies remain idempotent.
+
+---
+
+### storage account management-policy (Lifecycle policies)
+
+```bash
+azlocal storage account management-policy create --name myacct \
+  --resource-group myRG --policy @policy.json
+azlocal storage account management-policy show   --name myacct --resource-group myRG
+azlocal storage account management-policy delete --name myacct --resource-group myRG
+```
+
+`--policy` accepts either an inline JSON string, a file path, or `@file`.
+miniblue round-trips the rule bodies but does not enforce them against
+blob data.
+
+---
+
 ## Full command reference
 
 | Command | Subcommands |
@@ -307,12 +361,17 @@ azlocal functionapp delete --name my-func --resource-group myRG
 | `azlocal health` | _(none)_ |
 | `azlocal group` | `create`, `list`, `show`, `delete` |
 | `azlocal keyvault secret` | `set`, `show`, `list`, `delete` |
+| `azlocal storage account` | `create`, `list`, `show`, `delete`, `list-keys`, `management-policy` |
+| `azlocal storage account management-policy` | `create`, `update`, `show`, `delete` |
 | `azlocal storage container` | `create`, `delete` |
 | `azlocal storage blob` | `upload`, `download`, `list`, `delete` |
 | `azlocal network vnet` | `create`, `show`, `list`, `delete` |
 | `azlocal network vnet subnet` | `create`, `show`, `list`, `delete`, `update` |
 | `azlocal vm` | `create`, `show`, `list`, `update`, `delete`, `start`, `stop`, `restart`, `deallocate`, `redeploy`, `get-instance-view` |
 | `azlocal vm extension` | `set`, `show`, `list`, `update`, `delete` |
+| `azlocal identity` | `create`, `list`, `show`, `update`, `delete` |
+| `azlocal role assignment` | `create`, `list`, `show`, `delete` |
+| `azlocal role definition` | `create`, `list`, `show`, `delete` |
 | `azlocal cosmosdb doc` | `create`, `show`, `list`, `delete` |
 | `azlocal servicebus queue` | `create`, `send`, `receive`, `delete` |
 | `azlocal servicebus topic` | `create`, `send`, `delete` |

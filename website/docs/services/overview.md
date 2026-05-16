@@ -1,6 +1,6 @@
 # Services Overview
 
-miniblue emulates 28 Azure services on a single port. All services use in-memory storage and require no authentication.
+miniblue emulates 32 Azure services on a single port. All services use in-memory storage (or optional file/Postgres persistence) and require no authentication.
 
 ## Service status
 
@@ -32,6 +32,10 @@ miniblue emulates 28 Azure services on a single port. All services use in-memory
 | Load Balancer | `Microsoft.Network` | Done | Yes | -- |
 | Application Gateway | `Microsoft.Network` | Done | Yes | -- |
 | Storage Accounts | `Microsoft.Storage` | Done | Yes | -- |
+| [Virtual Machines](virtual-machines.md) | `Microsoft.Compute` | Done | Yes | -- |
+| [Managed Disks](managed-disks.md) | `Microsoft.Compute` | Done | Yes | -- |
+| [Managed Identity](managed-identity.md) (user-assigned) | `Microsoft.ManagedIdentity` | Done | Yes | -- |
+| [RBAC](rbac.md) | `Microsoft.Authorization` | Done | Yes | -- |
 
 ### What "ARM API" and "Data Plane" mean
 
@@ -59,7 +63,15 @@ The following resources work with `hashicorp/azurerm` provider v3.x:
 | `azurerm_lb_rule` | Load Balancer |
 | `azurerm_application_gateway` | Application Gateway |
 | `azurerm_storage_account` | Storage Accounts |
+| `azurerm_storage_management_policy` | Storage Accounts |
 | `azurerm_kubernetes_cluster` | Kubernetes Service (AKS) |
+| `azurerm_linux_virtual_machine` / `azurerm_windows_virtual_machine` | Virtual Machines |
+| `azurerm_virtual_machine_extension` | Virtual Machines |
+| `azurerm_managed_disk` | Managed Disks |
+| `azurerm_user_assigned_identity` | Managed Identity |
+| `azurerm_role_definition` | RBAC |
+| `azurerm_role_assignment` | RBAC |
+| `azurerm_cosmosdb_table` | Cosmos DB |
 
 See the [Terraform guide](../guides/terraform.md) for a full working example.
 
