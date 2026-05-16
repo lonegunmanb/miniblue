@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestGeneratedCertificateCoversAppConfigHosts(t *testing.T) {
+func TestGeneratedCertificateCoversDataPlaneHosts(t *testing.T) {
 	_, certPEM, err := generateAndSaveCert(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -20,6 +20,9 @@ func TestGeneratedCertificateCoversAppConfigHosts(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := cert.VerifyHostname("myappconfig.azconfig.io"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cert.VerifyHostname("myvault.vault.azure.net"); err != nil {
 		t.Fatal(err)
 	}
 }

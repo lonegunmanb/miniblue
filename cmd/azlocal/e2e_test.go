@@ -147,6 +147,51 @@ func TestStorageAccountMissingResourceGroup(t *testing.T) {
 	}
 }
 
+func TestKeyVaultSecretCommands(t *testing.T) {
+	ts := setupMiniblue()
+	defer ts.Close()
+
+	setOut, _, code := runAzlocal(ts, "keyvault", "secret", "set",
+		"--vault", "myvault",
+		"--name", "db-pass",
+		"--value", "supersecret")
+	if code != 0 {
+		t.Fatalf("keyvault secret set failed: %s", setOut)
+	}
+	if !strings.Contains(setOut, "supersecret") || !strings.Contains(setOut, "https://myvault.vault.azure.net/secrets/db-pass/") {
+		t.Fatalf("expected secret value and versioned id in set output, got: %s", setOut)
+	}
+
+	showOut, _, code := runAzlocal(ts, "keyvault", "secret", "show",
+		"--vault", "myvault",
+		"--name", "db-pass")
+	if code != 0 {
+		t.Fatalf("keyvault secret show failed: %s", showOut)
+	}
+	if !strings.Contains(showOut, "supersecret") {
+		t.Fatalf("expected secret value in show output, got: %s", showOut)
+	}
+
+	listOut, _, code := runAzlocal(ts, "keyvault", "secret", "list",
+		"--vault", "myvault")
+	if code != 0 {
+		t.Fatalf("keyvault secret list failed: %s", listOut)
+	}
+	if !strings.Contains(listOut, "db-pass") || strings.Contains(listOut, "supersecret") {
+		t.Fatalf("expected redacted secret metadata in list output, got: %s", listOut)
+	}
+
+	deleteOut, _, code := runAzlocal(ts, "keyvault", "secret", "delete",
+		"--vault", "myvault",
+		"--name", "db-pass")
+	if code != 0 {
+		t.Fatalf("keyvault secret delete failed: %s", deleteOut)
+	}
+	if !strings.Contains(strings.ToLower(deleteOut), "deleted") {
+		t.Fatalf("expected delete confirmation, got: %s", deleteOut)
+	}
+}
+
 func TestIdentityCreateShowUpdateListDelete(t *testing.T) {
 	ts := setupMiniblue()
 	defer ts.Close()
