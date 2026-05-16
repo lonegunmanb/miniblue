@@ -2,11 +2,14 @@ package appconfig
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
-	"github.com/moabukar/miniblue/internal/azerr"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/moabukar/miniblue/internal/azerr"
 	"github.com/moabukar/miniblue/internal/store"
 )
 
@@ -39,56 +42,95 @@ func (h *Handler) Register(r chi.Router) {
 	})
 
 	// Data-plane paths: used for key-value operations
-	r.Route("/appconfig/{configStoreName}/kv", func(r chi.Router) {
-		r.Get("/", h.ListKeyValues)
-		r.Route("/{key}", func(r chi.Router) {
-			r.Put("/", h.SetKeyValue)
-			r.Get("/", h.GetKeyValue)
-			r.Delete("/", h.DeleteKeyValue)
-		})
-	})
+	r.Get("/appconfig/{configStoreName}/kv", h.ListKeyValues)
+	r.Get("/appconfig/{configStoreName}/kv/", h.ListKeyValues)
+	r.Put("/appconfig/{configStoreName}/kv/*", h.SetKeyValue)
+	r.Get("/appconfig/{configStoreName}/kv/*", h.GetKeyValue)
+	r.Delete("/appconfig/{configStoreName}/kv/*", h.DeleteKeyValue)
+
+	// Public Azure-compatible data-plane paths, routed by Host/SNI name
+	// (for example: https://my-store.azconfig.io/kv/my-key).
+	r.Get("/kv", h.ListKeyValues)
+	r.Get("/kv/", h.ListKeyValues)
+	r.Put("/kv/*", h.SetKeyValue)
+	r.Get("/kv/*", h.GetKeyValue)
+	r.Delete("/kv/*", h.DeleteKeyValue)
 }
 
-func (h *Handler) kvKey(store, key string) string {
-	return "appconfig:" + store + ":" + key
+func (h *Handler) kvKey(storeName, key, label string) string {
+	return h.kvPrefix(storeName) + url.QueryEscape(label) + ":" + url.PathEscape(key)
+}
+
+func (h *Handler) kvPrefix(storeName string) string {
+	return "appconfig:kv:" + url.PathEscape(storeName) + ":"
+}
+
+func requestStoreName(r *http.Request) string {
+	if storeName := chi.URLParam(r, "configStoreName"); storeName != "" {
+		return storeName
+	}
+	host := r.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	return strings.TrimSuffix(host, ".azconfig.io")
+}
+
+func requestKey(r *http.Request) string {
+	return chi.URLParam(r, "*")
+}
+
+func requestLabel(r *http.Request, kv KeyValue) string {
+	if label := r.URL.Query().Get("label"); label != "" {
+		return label
+	}
+	return kv.Label
 }
 
 func (h *Handler) SetKeyValue(w http.ResponseWriter, r *http.Request) {
-	storeName := chi.URLParam(r, "configStoreName")
-	key := chi.URLParam(r, "key")
-	
+	storeName := requestStoreName(r)
+	key := requestKey(r)
+
 	var kv KeyValue
 	json.NewDecoder(r.Body).Decode(&kv)
 	kv.Key = key
+	kv.Label = requestLabel(r, kv)
 	kv.LastModified = time.Now().UTC().Format(time.RFC3339)
 	kv.Etag = "etag-" + key
-	
-	h.store.Set(h.kvKey(storeName, key), kv)
+
+	w.Header().Set("ETag", kv.Etag)
+	h.store.Set(h.kvKey(storeName, key, kv.Label), kv)
 	json.NewEncoder(w).Encode(kv)
 }
 
 func (h *Handler) GetKeyValue(w http.ResponseWriter, r *http.Request) {
-	storeName := chi.URLParam(r, "configStoreName")
-	key := chi.URLParam(r, "key")
-	
-	v, ok := h.store.Get(h.kvKey(storeName, key))
+	storeName := requestStoreName(r)
+	key := requestKey(r)
+	label := r.URL.Query().Get("label")
+
+	v, ok := h.store.Get(h.kvKey(storeName, key, label))
 	if !ok {
 		azerr.NotFound(w, "AppConfiguration/keyValues", key)
 		return
+	}
+	if kv, ok := v.(KeyValue); ok {
+		w.Header().Set("ETag", kv.Etag)
 	}
 	json.NewEncoder(w).Encode(v)
 }
 
 func (h *Handler) DeleteKeyValue(w http.ResponseWriter, r *http.Request) {
-	storeName := chi.URLParam(r, "configStoreName")
-	key := chi.URLParam(r, "key")
-	h.store.Delete(h.kvKey(storeName, key))
+	storeName := requestStoreName(r)
+	key := requestKey(r)
+	label := r.URL.Query().Get("label")
+	h.store.Delete(h.kvKey(storeName, key, label))
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) ListKeyValues(w http.ResponseWriter, r *http.Request) {
-	storeName := chi.URLParam(r, "configStoreName")
-	items := h.store.ListByPrefix("appconfig:" + storeName + ":")
+	storeName := requestStoreName(r)
+	items := h.store.ListByPrefix(h.kvPrefix(storeName))
 	json.NewEncoder(w).Encode(map[string]interface{}{"value": items})
 }
 

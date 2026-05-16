@@ -1,7 +1,9 @@
 package tests
 
 import (
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -11,6 +13,33 @@ const appConfigStore = "myappconfig"
 
 func appConfigARMBase(ts *httptest.Server) string {
 	return ts.URL + "/subscriptions/" + appConfigSub + "/resourceGroups/" + appConfigRG + "/providers/Microsoft.AppConfiguration/configurationStores"
+}
+
+func doAppConfigHostRequest(t *testing.T, method, url, host, body string) *http.Response {
+	t.Helper()
+	req, err := http.NewRequest(method, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body != "" {
+		req = mustRequestWithBody(t, method, url, body)
+	}
+	req.Host = host
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
+}
+
+func mustRequestWithBody(t *testing.T, method, url, body string) *http.Request {
+	t.Helper()
+	req, err := http.NewRequest(method, url, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return req
 }
 
 func TestAppConfigARMStoreCRUD(t *testing.T) {
@@ -135,5 +164,59 @@ func TestAppConfigARMDoesNotBreakDataPlane(t *testing.T) {
 	m := decodeJSON(t, resp)
 	if m["value"] != "myvalue" {
 		t.Fatalf("expected value=myvalue, got %v", m["value"])
+	}
+}
+
+func TestAppConfigDataPlaneAzConfigHostCRUD(t *testing.T) {
+	ts := setupServer()
+	defer ts.Close()
+	host := appConfigStore + ".azconfig.io"
+	base := ts.URL + "/kv/mykey"
+
+	resp := doAppConfigHostRequest(t, "PUT", base, host, `{"value":"myvalue"}`)
+	defer resp.Body.Close()
+	expectStatus(t, resp, 200)
+	m := decodeJSON(t, resp)
+	if m["key"] != "mykey" || m["value"] != "myvalue" {
+		t.Fatalf("expected key/value round trip, got %v", m)
+	}
+
+	resp2 := doAppConfigHostRequest(t, "GET", base, host, "")
+	defer resp2.Body.Close()
+	expectStatus(t, resp2, 200)
+	m = decodeJSON(t, resp2)
+	if m["value"] != "myvalue" {
+		t.Fatalf("expected value=myvalue, got %v", m["value"])
+	}
+
+	resp3 := doAppConfigHostRequest(t, "DELETE", base, host, "")
+	defer resp3.Body.Close()
+	expectStatus(t, resp3, 204)
+
+	resp4 := doAppConfigHostRequest(t, "GET", base, host, "")
+	defer resp4.Body.Close()
+	expectStatus(t, resp4, 404)
+}
+
+func TestAppConfigDataPlaneAzConfigHostLabelsAndSlashKeys(t *testing.T) {
+	ts := setupServer()
+	defer ts.Close()
+	host := appConfigStore + ".azconfig.io"
+	base := ts.URL + "/kv/folder/key"
+
+	resp := doAppConfigHostRequest(t, "PUT", base+"?label=prod", host, `{"value":"prodvalue"}`)
+	defer resp.Body.Close()
+	expectStatus(t, resp, 200)
+
+	resp2 := doAppConfigHostRequest(t, "PUT", base+"?label=dev", host, `{"value":"devvalue"}`)
+	defer resp2.Body.Close()
+	expectStatus(t, resp2, 200)
+
+	resp3 := doAppConfigHostRequest(t, "GET", base+"?label=prod", host, "")
+	defer resp3.Body.Close()
+	expectStatus(t, resp3, 200)
+	m := decodeJSON(t, resp3)
+	if m["key"] != "folder/key" || m["label"] != "prod" || m["value"] != "prodvalue" {
+		t.Fatalf("expected labeled slash key, got %v", m)
 	}
 }
