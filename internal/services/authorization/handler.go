@@ -40,7 +40,22 @@ func NewHandler(s *store.Store) *Handler {
 }
 
 func (h *Handler) Register(r chi.Router) {
-	r.HandleFunc("/subscriptions/{subscriptionId}/*", h.Dispatch)
+	h.registerScope(r, "/subscriptions/{subscriptionId}/providers/Microsoft.Authorization")
+	h.registerScope(r, "/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Authorization")
+	for _, scope := range []string{
+		"/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/{resourceProvider}/{resourceType}/{resourceName}",
+		"/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/{resourceProvider}/{resourceType}/{resourceName}/{childType}/{childName}",
+		"/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/{resourceProvider}/{resourceType}/{resourceName}/{childType}/{childName}/{grandchildType}/{grandchildName}",
+	} {
+		r.HandleFunc(scope+"/providers/Microsoft.Authorization/*", h.Dispatch)
+	}
+}
+
+func (h *Handler) registerScope(r chi.Router, base string) {
+	r.HandleFunc(base+"/roleAssignments", h.Dispatch)
+	r.HandleFunc(base+"/roleAssignments/{roleAssignmentName}", h.Dispatch)
+	r.HandleFunc(base+"/roleDefinitions", h.Dispatch)
+	r.HandleFunc(base+"/roleDefinitions/{roleDefinitionName}", h.Dispatch)
 }
 
 func (h *Handler) Dispatch(w http.ResponseWriter, r *http.Request) {
