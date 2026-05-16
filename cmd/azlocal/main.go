@@ -382,17 +382,19 @@ func printResponse(resp *http.Response) {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: failed to read response: %v\n", err)
-		return
+		os.Exit(1)
 	}
-	if len(body) == 0 {
-		return
+	if len(body) > 0 {
+		// Pretty print JSON
+		var out bytes.Buffer
+		if json.Indent(&out, body, "", "  ") == nil {
+			fmt.Println(out.String())
+		} else {
+			fmt.Println(string(body))
+		}
 	}
-	// Pretty print JSON
-	var out bytes.Buffer
-	if json.Indent(&out, body, "", "  ") == nil {
-		fmt.Println(out.String())
-	} else {
-		fmt.Println(string(body))
+	if resp.StatusCode >= 400 {
+		os.Exit(1)
 	}
 }
 

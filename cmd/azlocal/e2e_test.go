@@ -352,6 +352,50 @@ func TestRoleAssignmentCreateListDelete(t *testing.T) {
 	}
 }
 
+func TestRoleAssignmentKeyVaultScope(t *testing.T) {
+	ts := setupMiniblue()
+	defer ts.Close()
+
+	scope := "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/myRG/providers/Microsoft.KeyVault/vaults/probe-kv-001"
+	name := "22222222-2222-2222-2222-222222222222"
+	createOut, _, code := runAzlocal(ts, "role", "assignment", "create",
+		"--scope", scope,
+		"--name", name,
+		"--assignee", "principal-1",
+		"--role", "Key Vault Secrets User")
+	if code != 0 {
+		t.Fatalf("role assignment create failed: %s", createOut)
+	}
+	if !strings.Contains(createOut, "\"principalId\": \"principal-1\"") ||
+		!strings.Contains(createOut, "4633458b-17de-408a-b874-0445c86b69e6") ||
+		!strings.Contains(createOut, scope) {
+		t.Fatalf("expected Key Vault role assignment details in create output, got: %s", createOut)
+	}
+
+	listOut, _, code := runAzlocal(ts, "role", "assignment", "list", "--scope", scope)
+	if code != 0 {
+		t.Fatalf("role assignment list failed: %s", listOut)
+	}
+	if !strings.Contains(listOut, name) || !strings.Contains(listOut, "principal-1") {
+		t.Fatalf("expected Key Vault role assignment in list output, got: %s", listOut)
+	}
+}
+
+func TestAzlocalExitsNonZeroForARMErrors(t *testing.T) {
+	ts := setupMiniblue()
+	defer ts.Close()
+
+	output, _, code := runAzlocal(ts, "storage", "account", "show",
+		"--resource-group", "myRG",
+		"--name", "missingacct")
+	if code == 0 {
+		t.Fatalf("expected non-zero exit for ARM error, got output: %s", output)
+	}
+	if !strings.Contains(output, "NotFound") {
+		t.Fatalf("expected ARM error response, got: %s", output)
+	}
+}
+
 func TestCosmosDBTableCommands(t *testing.T) {
 	ts := setupMiniblue()
 	defer ts.Close()

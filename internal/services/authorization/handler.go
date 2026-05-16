@@ -42,6 +42,7 @@ func NewHandler(s *store.Store) *Handler {
 func (h *Handler) Register(r chi.Router) {
 	h.registerScope(r, "/subscriptions/{subscriptionId}/providers/Microsoft.Authorization")
 	h.registerScope(r, "/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Authorization")
+	h.registerScope(r, "/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.KeyVault/vaults/{vaultName}/providers/Microsoft.Authorization")
 	for _, scope := range []string{
 		"/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/{resourceProvider}/{resourceType}/{resourceName}",
 		"/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/{resourceProvider}/{resourceType}/{resourceName}/{childType}/{childName}",
