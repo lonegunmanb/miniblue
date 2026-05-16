@@ -37,6 +37,7 @@ What's implemented, stubbed, and unsupported in miniblue compared to real Azure 
 | Compute Catalog (VM sizes, SKUs, images) | -- | Full | Full | -- | -- | Static catalog used by Terraform plan |
 | User-Assigned Managed Identities | Full | Full | Full | Full | Full (PATCH) | Deterministic `principalId`/`clientId`/`tenantId` |
 | RBAC (role assignments + definitions) | Full | Full | Full | Full | - | Stored only — no access is enforced |
+| Key Vault Vaults | Full | Full | Full | Full | Full (PATCH) | `checkNameAvailability`, access policy updates, soft-deleted vault lookup/purge, and synchronous LRO headers |
 | Cosmos DB SQL Databases & Containers (ARM) | Full | Full | Full | Full | - | |
 | Cosmos DB Table API (ARM) | Full | Full | Full | Full | - | Throughput settings supported |
 | Storage Management Policies | Full | Full | -- | Full | - | Lifecycle rules round-tripped, not enforced |
@@ -51,7 +52,7 @@ What's implemented, stubbed, and unsupported in miniblue compared to real Azure 
 | Blob Storage | Create container, upload, download, list, delete, lease, HEAD | Full | Multi-segment blob names, lease acquire/renew/release/break/change, `?comp=metadata`/`?comp=properties`, spec-compliant List Blobs XML, SharedKey auth (optional bypass via `MINIBLUE_DISABLE_SHAREDKEY_AUTH`) |
 | Table Storage | Create table, upsert, get, query, delete entity | Full | Partition/row key support |
 | Queue Storage | Create queue, send, receive, clear, delete | Full | Dequeue count tracking |
-| Key Vault | Set, get, list, delete secrets | Full | Reachable via `/keyvault/{vault}/...` or by `Host: *.vault.azure.net` routing. Keys and certificates not supported. |
+| Key Vault | Set, get, list, delete secrets | Full | Reachable via `/keyvault/{vault}/...` or by `Host: *.vault.azure.net` routing. Vault resources are available through ARM. Keys and certificates not supported. |
 | Cosmos DB | Create, get, replace, delete, list documents | Full | SQL API only, no query language |
 | Service Bus | Create queue/topic, send, receive, delete | Full | No subscriptions, no dead-letter |
 | App Configuration | Set, get, list, delete key-values | Full | No labels, no feature flags. Reachable via `/appconfig/{store}/kv/...` or by `Host: *.azconfig.io` routing. |
