@@ -328,15 +328,20 @@ func imageOSAndDefaultDiskSize(imageRef map[string]interface{}) (string, float64
 }
 
 func normalizeAdditionalCapabilities(vmProps map[string]interface{}) {
-	additionalCapabilities := asMap(vmProps["additionalCapabilities"])
-	if additionalCapabilities == nil {
+	raw, present := vmProps["additionalCapabilities"]
+	if !present {
 		return
 	}
-	if _, ok := additionalCapabilities["hibernationEnabled"]; !ok {
-		additionalCapabilities["hibernationEnabled"] = false
-	}
-	if _, ok := additionalCapabilities["ultraSSDEnabled"]; !ok {
-		additionalCapabilities["ultraSSDEnabled"] = false
+	additionalCapabilities := asMap(raw)
+	// Faithfully replay the client's payload: do not auto-fill missing
+	// sub-fields, and drop the key entirely when the client provided no
+	// usable content (empty object or non-object value). Real Azure ARM
+	// echoes back exactly what was PUT for additionalCapabilities, so
+	// miniblue must do the same to avoid false drift for clients that
+	// rely on key presence/absence semantics.
+	if additionalCapabilities == nil || len(additionalCapabilities) == 0 {
+		delete(vmProps, "additionalCapabilities")
+		return
 	}
 }
 
