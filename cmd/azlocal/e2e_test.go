@@ -4,6 +4,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -144,6 +145,50 @@ func TestStorageAccountMissingResourceGroup(t *testing.T) {
 
 	if code == 0 {
 		t.Fatal("expected error for missing --resource-group")
+	}
+}
+
+func TestStorageAccountManagementPolicyCommands(t *testing.T) {
+	ts := setupMiniblue()
+	defer ts.Close()
+
+	runAzlocal(ts, "storage", "account", "create", "--resource-group", "myRG", "--name", "policyacct")
+
+	policyFile := filepath.Join(t.TempDir(), "policy.json")
+	policyJSON := `{"properties":{"policy":{"enabled":true,"rules":[{"name":"delete-old-blobs","enabled":true,"type":"Lifecycle","definition":{"actions":{"baseBlob":{"delete":{"daysAfterModificationGreaterThan":7}}},"filters":{"blobTypes":["blockBlob"]}}}]}}}`
+	if err := os.WriteFile(policyFile, []byte(policyJSON), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	createOut, _, code := runAzlocal(ts, "storage", "account", "management-policy", "create",
+		"--resource-group", "myRG",
+		"--account-name", "policyacct",
+		"--policy", "@"+policyFile)
+	if code != 0 {
+		t.Fatalf("management-policy create failed: %s", createOut)
+	}
+	if !strings.Contains(createOut, "delete-old-blobs") || !strings.Contains(createOut, "managementPolicies") {
+		t.Fatalf("expected policy response, got: %s", createOut)
+	}
+
+	showOut, _, code := runAzlocal(ts, "storage", "account", "management-policy", "show",
+		"--resource-group", "myRG",
+		"--account-name", "policyacct")
+	if code != 0 {
+		t.Fatalf("management-policy show failed: %s", showOut)
+	}
+	if !strings.Contains(showOut, "delete-old-blobs") || !strings.Contains(showOut, "managementPolicies") {
+		t.Fatalf("expected policy response, got: %s", showOut)
+	}
+
+	deleteOut, _, code := runAzlocal(ts, "storage", "account", "management-policy", "delete",
+		"--resource-group", "myRG",
+		"--account-name", "policyacct")
+	if code != 0 {
+		t.Fatalf("management-policy delete failed: %s", deleteOut)
+	}
+	if !strings.Contains(strings.ToLower(deleteOut), "deleted") {
+		t.Fatalf("expected delete confirmation, got: %s", deleteOut)
 	}
 }
 
