@@ -262,6 +262,69 @@ func TestRoleAssignmentCreateListDelete(t *testing.T) {
 	}
 }
 
+func TestCosmosDBTableCommands(t *testing.T) {
+	ts := setupMiniblue()
+	defer ts.Close()
+
+	createOut, _, code := runAzlocal(ts, "cosmosdb", "table", "create",
+		"--resource-group", "myRG",
+		"--account", "acct1",
+		"--name", "users",
+		"--data", `{"properties":{"resource":{"id":"users"}}}`)
+	if code != 0 {
+		t.Fatalf("cosmosdb table create failed: %s", createOut)
+	}
+	if !strings.Contains(createOut, "\"name\": \"users\"") ||
+		!strings.Contains(createOut, "Microsoft.DocumentDB/databaseAccounts/tables") {
+		t.Fatalf("expected table details in create output, got: %s", createOut)
+	}
+
+	listOut, _, code := runAzlocal(ts, "cosmosdb", "table", "list",
+		"--resource-group", "myRG",
+		"--account", "acct1")
+	if code != 0 {
+		t.Fatalf("cosmosdb table list failed: %s", listOut)
+	}
+	if !strings.Contains(listOut, "\"name\": \"users\"") {
+		t.Fatalf("expected table in list output, got: %s", listOut)
+	}
+
+	throughputOut, _, code := runAzlocal(ts, "cosmosdb", "table", "throughput", "update",
+		"--resource-group", "myRG",
+		"--account", "acct1",
+		"--name", "users",
+		"--data", `{"properties":{"resource":{"throughput":400}}}`)
+	if code != 0 {
+		t.Fatalf("cosmosdb table throughput update failed: %s", throughputOut)
+	}
+	if !strings.Contains(throughputOut, "\"name\": \"default\"") ||
+		!strings.Contains(throughputOut, "\"throughput\": 400") {
+		t.Fatalf("expected throughput details in update output, got: %s", throughputOut)
+	}
+
+	showThroughputOut, _, code := runAzlocal(ts, "cosmosdb", "table", "throughput", "show",
+		"--resource-group", "myRG",
+		"--account", "acct1",
+		"--name", "users")
+	if code != 0 {
+		t.Fatalf("cosmosdb table throughput show failed: %s", showThroughputOut)
+	}
+	if !strings.Contains(showThroughputOut, "\"throughput\": 400") {
+		t.Fatalf("expected throughput in show output, got: %s", showThroughputOut)
+	}
+
+	deleteOut, _, code := runAzlocal(ts, "cosmosdb", "table", "delete",
+		"--resource-group", "myRG",
+		"--account", "acct1",
+		"--name", "users")
+	if code != 0 {
+		t.Fatalf("cosmosdb table delete failed: %s", deleteOut)
+	}
+	if !strings.Contains(strings.ToLower(deleteOut), "deleted") {
+		t.Fatalf("expected delete confirmation, got: %s", deleteOut)
+	}
+}
+
 // --- vm ---
 
 func TestVMCreateShowListDelete(t *testing.T) {
