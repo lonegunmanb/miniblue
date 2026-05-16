@@ -183,6 +183,100 @@ func TestCosmosDBARMContainerCRUD(t *testing.T) {
 	expectStatus(t, resp5, 404)
 }
 
+func TestCosmosDBARMTableCRUD(t *testing.T) {
+	ts := setupServer()
+	defer ts.Close()
+	acctBase := cosmosARMBase(ts) + "/" + cosmosAcct
+	doRequest(t, "PUT", acctBase, `{}`).Body.Close()
+
+	tableBase := acctBase + "/tables/users"
+	body := `{"properties":{"resource":{"id":"users"},"options":{"throughput":400}},"location":"eastus"}`
+
+	resp := doRequest(t, "PUT", tableBase, body)
+	defer resp.Body.Close()
+	expectStatus(t, resp, 201)
+
+	m := decodeJSON(t, resp)
+	if m["name"] != "users" {
+		t.Fatalf("expected name=users, got %v", m["name"])
+	}
+	if m["type"] != "Microsoft.DocumentDB/databaseAccounts/tables" {
+		t.Fatalf("expected correct type, got %v", m["type"])
+	}
+	if m["location"] != "eastus" {
+		t.Fatalf("expected request location to be echoed, got %v", m["location"])
+	}
+	props := m["properties"].(map[string]interface{})
+	resource := props["resource"].(map[string]interface{})
+	if resource["id"] != "users" {
+		t.Fatalf("expected properties.resource.id to be echoed, got %v", resource["id"])
+	}
+
+	resp2 := doRequest(t, "GET", tableBase, "")
+	defer resp2.Body.Close()
+	expectStatus(t, resp2, 200)
+
+	resp3 := doRequest(t, "GET", acctBase+"/tables", "")
+	defer resp3.Body.Close()
+	expectStatus(t, resp3, 200)
+	ml := decodeJSON(t, resp3)
+	if len(ml["value"].([]interface{})) == 0 {
+		t.Fatal("expected at least 1 table in list")
+	}
+
+	resp4 := doRequest(t, "PUT", tableBase, body)
+	defer resp4.Body.Close()
+	expectStatus(t, resp4, 200)
+
+	resp5 := doRequest(t, "DELETE", tableBase, "")
+	defer resp5.Body.Close()
+	expectStatus(t, resp5, 202)
+
+	resp6 := doRequest(t, "GET", tableBase, "")
+	defer resp6.Body.Close()
+	expectStatus(t, resp6, 404)
+}
+
+func TestCosmosDBARMTableThroughputSettings(t *testing.T) {
+	ts := setupServer()
+	defer ts.Close()
+	acctBase := cosmosARMBase(ts) + "/" + cosmosAcct
+	doRequest(t, "PUT", acctBase, `{}`).Body.Close()
+	doRequest(t, "PUT", acctBase+"/tables/users", `{"properties":{"resource":{"id":"users"}}}`).Body.Close()
+
+	throughputBase := acctBase + "/tables/users/throughputSettings/default"
+	body := `{"properties":{"resource":{"throughput":400},"autoscaleSettings":{"maxThroughput":4000}}}`
+
+	resp := doRequest(t, "PUT", throughputBase, body)
+	defer resp.Body.Close()
+	expectStatus(t, resp, 201)
+
+	m := decodeJSON(t, resp)
+	if m["name"] != "default" {
+		t.Fatalf("expected name=default, got %v", m["name"])
+	}
+	if m["type"] != "Microsoft.DocumentDB/databaseAccounts/tables/throughputSettings" {
+		t.Fatalf("expected correct type, got %v", m["type"])
+	}
+	props := m["properties"].(map[string]interface{})
+	resource := props["resource"].(map[string]interface{})
+	if resource["throughput"] != float64(400) {
+		t.Fatalf("expected throughput to be echoed, got %v", resource["throughput"])
+	}
+	autoscale := props["autoscaleSettings"].(map[string]interface{})
+	if autoscale["maxThroughput"] != float64(4000) {
+		t.Fatalf("expected maxThroughput to be echoed, got %v", autoscale["maxThroughput"])
+	}
+
+	resp2 := doRequest(t, "GET", throughputBase, "")
+	defer resp2.Body.Close()
+	expectStatus(t, resp2, 200)
+
+	resp3 := doRequest(t, "PUT", throughputBase, body)
+	defer resp3.Body.Close()
+	expectStatus(t, resp3, 200)
+}
+
 func TestCosmosDBARMResponseHasID(t *testing.T) {
 	ts := setupServer()
 	defer ts.Close()

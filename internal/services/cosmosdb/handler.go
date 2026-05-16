@@ -41,6 +41,18 @@ func (h *Handler) Register(r chi.Router) {
 					})
 				})
 			})
+			r.Route("/tables", func(r chi.Router) {
+				r.Get("/", h.ListTables)
+				r.Route("/{tableName}", func(r chi.Router) {
+					r.Put("/", h.CreateOrUpdateTable)
+					r.Get("/", h.GetTable)
+					r.Delete("/", h.DeleteTable)
+					r.Route("/throughputSettings/default", func(r chi.Router) {
+						r.Put("/", h.CreateOrUpdateTableThroughput)
+						r.Get("/", h.GetTableThroughput)
+					})
+				})
+			})
 		})
 	})
 
@@ -145,8 +157,8 @@ func (h *Handler) buildAccountResponse(sub, rg, name string) map[string]interfac
 		"location": "eastus",
 		"kind":     "GlobalDocumentDB",
 		"properties": map[string]interface{}{
-			"provisioningState":     "Succeeded",
-			"documentEndpoint":      "https://" + name + ".documents.azure.com:443/",
+			"provisioningState":        "Succeeded",
+			"documentEndpoint":         "https://" + name + ".documents.azure.com:443/",
 			"databaseAccountOfferType": "Standard",
 			"consistencyPolicy": map[string]interface{}{
 				"defaultConsistencyLevel": "Session",
@@ -353,4 +365,112 @@ func (h *Handler) ListContainers(w http.ResponseWriter, r *http.Request) {
 	dbName := chi.URLParam(r, "dbName")
 	items := h.store.ListByPrefix("cosmos:container:" + sub + ":" + rg + ":" + acct + ":" + dbName + ":")
 	json.NewEncoder(w).Encode(map[string]interface{}{"value": items})
+}
+
+// --- ARM Table handlers ---
+
+func (h *Handler) tableKey(sub, rg, acct, name string) string {
+	return "cosmos:table:" + sub + ":" + rg + ":" + acct + ":" + name
+}
+
+func (h *Handler) tableThroughputKey(sub, rg, acct, name string) string {
+	return "cosmos:tablethroughput:" + sub + ":" + rg + ":" + acct + ":" + name
+}
+
+func (h *Handler) CreateOrUpdateTable(w http.ResponseWriter, r *http.Request) {
+	sub := chi.URLParam(r, "subscriptionId")
+	rg := chi.URLParam(r, "resourceGroupName")
+	acct := chi.URLParam(r, "accountName")
+	name := chi.URLParam(r, "tableName")
+
+	k := h.tableKey(sub, rg, acct, name)
+	_, exists := h.store.Get(k)
+
+	table := map[string]interface{}{}
+	json.NewDecoder(r.Body).Decode(&table)
+	table["id"] = "/subscriptions/" + sub + "/resourceGroups/" + rg + "/providers/Microsoft.DocumentDB/databaseAccounts/" + acct + "/tables/" + name
+	table["name"] = name
+	table["type"] = "Microsoft.DocumentDB/databaseAccounts/tables"
+	h.store.Set(k, table)
+
+	if exists {
+		w.WriteHeader(http.StatusOK)
+	} else {
+		w.WriteHeader(http.StatusCreated)
+	}
+	json.NewEncoder(w).Encode(table)
+}
+
+func (h *Handler) GetTable(w http.ResponseWriter, r *http.Request) {
+	sub := chi.URLParam(r, "subscriptionId")
+	rg := chi.URLParam(r, "resourceGroupName")
+	acct := chi.URLParam(r, "accountName")
+	name := chi.URLParam(r, "tableName")
+
+	v, ok := h.store.Get(h.tableKey(sub, rg, acct, name))
+	if !ok {
+		azerr.NotFound(w, "Microsoft.DocumentDB/databaseAccounts/tables", name)
+		return
+	}
+	json.NewEncoder(w).Encode(v)
+}
+
+func (h *Handler) DeleteTable(w http.ResponseWriter, r *http.Request) {
+	sub := chi.URLParam(r, "subscriptionId")
+	rg := chi.URLParam(r, "resourceGroupName")
+	acct := chi.URLParam(r, "accountName")
+	name := chi.URLParam(r, "tableName")
+
+	if !h.store.Delete(h.tableKey(sub, rg, acct, name)) {
+		azerr.NotFound(w, "Microsoft.DocumentDB/databaseAccounts/tables", name)
+		return
+	}
+	h.store.Delete(h.tableThroughputKey(sub, rg, acct, name))
+	w.WriteHeader(http.StatusAccepted)
+}
+
+func (h *Handler) ListTables(w http.ResponseWriter, r *http.Request) {
+	sub := chi.URLParam(r, "subscriptionId")
+	rg := chi.URLParam(r, "resourceGroupName")
+	acct := chi.URLParam(r, "accountName")
+	items := h.store.ListByPrefix("cosmos:table:" + sub + ":" + rg + ":" + acct + ":")
+	json.NewEncoder(w).Encode(map[string]interface{}{"value": items})
+}
+
+func (h *Handler) CreateOrUpdateTableThroughput(w http.ResponseWriter, r *http.Request) {
+	sub := chi.URLParam(r, "subscriptionId")
+	rg := chi.URLParam(r, "resourceGroupName")
+	acct := chi.URLParam(r, "accountName")
+	tableName := chi.URLParam(r, "tableName")
+
+	k := h.tableThroughputKey(sub, rg, acct, tableName)
+	_, exists := h.store.Get(k)
+
+	throughput := map[string]interface{}{}
+	json.NewDecoder(r.Body).Decode(&throughput)
+	throughput["id"] = "/subscriptions/" + sub + "/resourceGroups/" + rg + "/providers/Microsoft.DocumentDB/databaseAccounts/" + acct + "/tables/" + tableName + "/throughputSettings/default"
+	throughput["name"] = "default"
+	throughput["type"] = "Microsoft.DocumentDB/databaseAccounts/tables/throughputSettings"
+	h.store.Set(k, throughput)
+
+	if exists {
+		w.WriteHeader(http.StatusOK)
+	} else {
+		w.WriteHeader(http.StatusCreated)
+	}
+	json.NewEncoder(w).Encode(throughput)
+}
+
+func (h *Handler) GetTableThroughput(w http.ResponseWriter, r *http.Request) {
+	sub := chi.URLParam(r, "subscriptionId")
+	rg := chi.URLParam(r, "resourceGroupName")
+	acct := chi.URLParam(r, "accountName")
+	tableName := chi.URLParam(r, "tableName")
+
+	v, ok := h.store.Get(h.tableThroughputKey(sub, rg, acct, tableName))
+	if !ok {
+		azerr.NotFound(w, "Microsoft.DocumentDB/databaseAccounts/tables/throughputSettings", "default")
+		return
+	}
+	json.NewEncoder(w).Encode(v)
 }

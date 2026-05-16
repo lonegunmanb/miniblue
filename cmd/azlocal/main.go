@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -866,12 +867,27 @@ func buildVMExtensionBody(args []string) map[string]interface{} {
 // --- Cosmos DB ---
 
 func handleCosmosDB(args []string) {
-	if len(args) < 2 {
-		fmt.Println("Usage: azlocal cosmosdb doc <create|show|list|delete> [flags]")
+	if len(args) == 0 {
+		fmt.Println(`Usage:
+  azlocal cosmosdb doc <create|show|list|delete> [flags]
+  azlocal cosmosdb table <create|show|list|delete> [flags]
+  azlocal cosmosdb table throughput <show|update> [flags]`)
 		return
 	}
-	if args[0] != "doc" {
+	switch args[0] {
+	case "doc":
+		handleCosmosDBDoc(args[1:])
+	case "table":
+		handleCosmosDBTable(args[1:])
+	default:
 		fmt.Fprintf(os.Stderr, "Unknown subcommand: cosmosdb %s\n", args[0])
+		return
+	}
+}
+
+func handleCosmosDBDoc(args []string) {
+	if len(args) < 1 {
+		fmt.Println("Usage: azlocal cosmosdb doc <create|show|list|delete> [flags]")
 		return
 	}
 	account := requireFlag(args, "account")
@@ -879,7 +895,7 @@ func handleCosmosDB(args []string) {
 	coll := requireFlag(args, "collection")
 	base := "/cosmosdb/" + account + "/dbs/" + db + "/colls/" + coll + "/docs"
 
-	switch args[1] {
+	switch args[0] {
 	case "create":
 		id := requireFlag(args, "id")
 		data := getFlag(args, "data")
@@ -897,7 +913,120 @@ func handleCosmosDB(args []string) {
 	case "delete":
 		id := requireFlag(args, "id")
 		doDelete(base + "/" + id)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown subcommand: cosmosdb doc %s\n", args[0])
 	}
+}
+
+func handleCosmosDBTable(args []string) {
+	if len(args) == 0 {
+		fmt.Println("Usage: azlocal cosmosdb table <create|show|list|delete|throughput> [flags]")
+		return
+	}
+	if args[0] == "throughput" {
+		handleCosmosDBTableThroughput(args[1:])
+		return
+	}
+
+	rg := requireFlag(args, "resource-group")
+	account := requireFlag(args, "account")
+	base := "/subscriptions/" + sub(args) + "/resourceGroups/" + rg + "/providers/Microsoft.DocumentDB/databaseAccounts/" + account + "/tables"
+
+	switch args[0] {
+	case "create":
+		name := requireFlag(args, "name")
+		doPut(base+"/"+name, buildCosmosDBTableBody(args, name))
+	case "show":
+		name := requireFlag(args, "name")
+		doGet(base + "/" + name)
+	case "list":
+		doGet(base)
+	case "delete":
+		name := requireFlag(args, "name")
+		doDelete(base + "/" + name)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown subcommand: cosmosdb table %s\n", args[0])
+	}
+}
+
+func buildCosmosDBTableBody(args []string, name string) map[string]interface{} {
+	body := map[string]interface{}{
+		"properties": map[string]interface{}{
+			"resource": map[string]interface{}{"id": name},
+		},
+	}
+	if data := getFlag(args, "data"); data != "" {
+		json.Unmarshal([]byte(data), &body)
+	}
+	if location := getFlag(args, "location"); location != "" {
+		body["location"] = location
+	}
+	if throughput := getFlag(args, "throughput"); throughput != "" {
+		props, _ := body["properties"].(map[string]interface{})
+		if props == nil {
+			props = map[string]interface{}{}
+			body["properties"] = props
+		}
+		options, _ := props["options"].(map[string]interface{})
+		if options == nil {
+			options = map[string]interface{}{}
+			props["options"] = options
+		}
+		options["throughput"] = parseIntFlag(throughput)
+	}
+	return body
+}
+
+func handleCosmosDBTableThroughput(args []string) {
+	if len(args) == 0 {
+		fmt.Println("Usage: azlocal cosmosdb table throughput <show|update> [flags]")
+		return
+	}
+	rg := requireFlag(args, "resource-group")
+	account := requireFlag(args, "account")
+	name := requireFlag(args, "name")
+	base := "/subscriptions/" + sub(args) + "/resourceGroups/" + rg + "/providers/Microsoft.DocumentDB/databaseAccounts/" + account + "/tables/" + name + "/throughputSettings/default"
+
+	switch args[0] {
+	case "show":
+		doGet(base)
+	case "update":
+		doPut(base, buildCosmosDBTableThroughputBody(args))
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown subcommand: cosmosdb table throughput %s\n", args[0])
+	}
+}
+
+func buildCosmosDBTableThroughputBody(args []string) map[string]interface{} {
+	body := map[string]interface{}{
+		"properties": map[string]interface{}{
+			"resource": map[string]interface{}{},
+		},
+	}
+	if data := getFlag(args, "data"); data != "" {
+		json.Unmarshal([]byte(data), &body)
+	}
+	if throughput := getFlag(args, "throughput"); throughput != "" {
+		props, _ := body["properties"].(map[string]interface{})
+		if props == nil {
+			props = map[string]interface{}{}
+			body["properties"] = props
+		}
+		resource, _ := props["resource"].(map[string]interface{})
+		if resource == nil {
+			resource = map[string]interface{}{}
+			props["resource"] = resource
+		}
+		resource["throughput"] = parseIntFlag(throughput)
+	}
+	return body
+}
+
+func parseIntFlag(value string) interface{} {
+	if i, err := strconv.Atoi(value); err == nil {
+		return i
+	}
+	return value
 }
 
 // --- Service Bus ---
