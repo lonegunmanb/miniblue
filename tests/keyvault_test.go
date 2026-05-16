@@ -123,9 +123,20 @@ func TestKeyVaultARMVaultCRUDAndAccessPolicies(t *testing.T) {
 	if vault["id"] != "/subscriptions/"+sub+"/resourceGroups/rg1/providers/Microsoft.KeyVault/vaults/kvtest" {
 		t.Fatalf("unexpected id: %v", vault["id"])
 	}
+	if _, ok := vault["systemData"].(map[string]interface{}); !ok {
+		t.Fatalf("expected systemData in create response, got %v", vault["systemData"])
+	}
 	props := vault["properties"].(map[string]interface{})
 	if props["vaultUri"] != "https://kvtest.vault.azure.net/" || props["provisioningState"] != "Succeeded" {
 		t.Fatalf("unexpected properties: %v", props)
+	}
+
+	resp = doRequest(t, "GET", base, "")
+	defer resp.Body.Close()
+	expectStatus(t, resp, 200)
+	vault = decodeJSON(t, resp)
+	if _, ok := vault["systemData"].(map[string]interface{}); !ok {
+		t.Fatalf("expected systemData in get response, got %v", vault["systemData"])
 	}
 
 	resp = doRequest(t, "PATCH", base, `{"tags":{"env":"prod"},"properties":{"enabledForDeployment":true}}`)
@@ -168,6 +179,14 @@ func TestKeyVaultARMVaultCRUDAndAccessPolicies(t *testing.T) {
 	availability := decodeJSON(t, resp)
 	if availability["nameAvailable"] != false || availability["reason"] != "AlreadyExists" {
 		t.Fatalf("expected unavailable name, got %v", availability)
+	}
+
+	resp = doRequest(t, "POST", ts.URL+"/subscriptions/"+sub+"/providers/Microsoft.KeyVault/checkNameAvailability?api-version=2023-07-01", `{"name":"ab","type":"Microsoft.KeyVault/vaults"}`)
+	defer resp.Body.Close()
+	expectStatus(t, resp, 200)
+	availability = decodeJSON(t, resp)
+	if availability["nameAvailable"] != false || availability["reason"] != "AccountNameInvalid" {
+		t.Fatalf("expected invalid name reason, got %v", availability)
 	}
 
 	resp = doRequest(t, "DELETE", base, "")

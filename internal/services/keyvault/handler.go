@@ -236,12 +236,26 @@ func buildVaultResponse(sub, rg, name string, input, existing map[string]interfa
 	props["vaultUri"] = "https://" + name + ".vault.azure.net/"
 	props["provisioningState"] = "Succeeded"
 
+	systemData := mapValue(existing["systemData"])
+	if systemData == nil {
+		now := time.Now().UTC().Format(time.RFC3339)
+		systemData = map[string]interface{}{
+			"createdAt":          now,
+			"createdBy":          "miniblue",
+			"createdByType":      "Application",
+			"lastModifiedAt":     now,
+			"lastModifiedBy":     "miniblue",
+			"lastModifiedByType": "Application",
+		}
+	}
+
 	return map[string]interface{}{
 		"id":         vaultID(sub, rg, name),
 		"name":       name,
 		"type":       "Microsoft.KeyVault/vaults",
 		"location":   location,
 		"tags":       tagMap,
+		"systemData": systemData,
 		"properties": props,
 	}
 }
@@ -454,7 +468,7 @@ func (h *Handler) CheckNameAvailability(w http.ResponseWriter, r *http.Request) 
 	resp := map[string]interface{}{"nameAvailable": true}
 	if !validVaultName(input.Name) {
 		resp["nameAvailable"] = false
-		resp["reason"] = "Invalid"
+		resp["reason"] = "AccountNameInvalid"
 		resp["message"] = "The vault name is invalid. Vault names must be 3-24 characters, start with a letter, end with a letter or digit, contain only letters, digits, and hyphens, and not contain consecutive hyphens."
 		json.NewEncoder(w).Encode(resp)
 		return
