@@ -27,7 +27,7 @@
 brew tap moabukar/tap && brew install miniblue
 
 # Or Docker
-docker run -p 4566:4566 -p 4567:4567 moabukar/miniblue:latest
+docker run -p 4566:4566 -p 443:4567 -p 4567:4567 moabukar/miniblue:latest
 ```
 
 Then interact with it:
@@ -107,7 +107,7 @@ Real backends shell out to the host Docker daemon. The default `moabukar/miniblu
 ```bash
 docker build --target=full -t miniblue:full .
 docker run -v /var/run/docker.sock:/var/run/docker.sock \
-  -p 4566:4566 -p 4567:4567 \
+  -p 4566:4566 -p 443:4567 -p 4567:4567 \
   -e AKS_BACKEND=k3s miniblue:full
 ```
 
