@@ -48,6 +48,8 @@ func main() {
 		handleServiceBus(args[1:])
 	case "appconfig":
 		handleAppConfig(args[1:])
+	case "identity":
+		handleIdentity(args[1:])
 	case "functionapp":
 		handleFunctions(args[1:])
 	case "dns":
@@ -102,6 +104,7 @@ Commands:
   cosmosdb     Cosmos DB operations
   servicebus   Service Bus operations
   appconfig    App Configuration operations
+  identity     User-assigned managed identity operations
   functionapp  Azure Functions operations
   dns          DNS zone and record operations
   eventgrid    Event Grid topic operations
@@ -157,6 +160,9 @@ Examples:
 
   azlocal eventgrid topic create --resource-group myRG --name mytopic --location eastus
   azlocal eventgrid topic list --resource-group myRG
+
+  azlocal identity create --resource-group myRG --name myidentity --location eastus
+  azlocal identity show --resource-group myRG --name myidentity
 
   azlocal acr create --resource-group myRG --name myregistry --location eastus
   azlocal acr list --resource-group myRG
@@ -228,6 +234,17 @@ func requireFlag(args []string, name string) string {
 		os.Exit(1)
 	}
 	return v
+}
+
+func parseTags(raw string) map[string]interface{} {
+	tags := map[string]interface{}{}
+	for _, part := range strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || r == ' ' }) {
+		key, value, ok := strings.Cut(part, "=")
+		if ok && key != "" {
+			tags[key] = value
+		}
+	}
+	return tags
 }
 
 func sub(args []string) string {
@@ -947,6 +964,48 @@ func handleAppConfig(args []string) {
 	case "delete":
 		key := requireFlag(args, "key")
 		doDelete(base + "/" + key)
+	}
+}
+
+// --- User-assigned Managed Identity ---
+
+func handleIdentity(args []string) {
+	if len(args) == 0 {
+		fmt.Println("Usage: azlocal identity <create|list|show|update|delete> [flags]")
+		return
+	}
+	rg := getFlag(args, "resource-group")
+	if rg == "" {
+		fmt.Fprintln(os.Stderr, "Error: --resource-group is required")
+		os.Exit(1)
+	}
+	base := "/subscriptions/" + sub(args) + "/resourceGroups/" + rg + "/providers/Microsoft.ManagedIdentity/userAssignedIdentities"
+	switch args[0] {
+	case "create":
+		name := requireFlag(args, "name")
+		location := getFlag(args, "location")
+		if location == "" {
+			location = "eastus"
+		}
+		doPut(base+"/"+name, map[string]interface{}{
+			"location": location,
+			"tags":     parseTags(getFlag(args, "tags")),
+		})
+	case "list":
+		doGet(base)
+	case "show":
+		name := requireFlag(args, "name")
+		doGet(base + "/" + name)
+	case "update":
+		name := requireFlag(args, "name")
+		doPatch(base+"/"+name, map[string]interface{}{
+			"tags": parseTags(getFlag(args, "tags")),
+		})
+	case "delete":
+		name := requireFlag(args, "name")
+		doDelete(base + "/" + name)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown subcommand: identity %s\n", args[0])
 	}
 }
 
