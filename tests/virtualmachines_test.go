@@ -1,6 +1,9 @@
 package tests
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestVirtualMachineLifecycleReferencesActionsAndSensitiveFields(t *testing.T) {
 	ts := setupServer()
@@ -267,9 +270,142 @@ func TestVirtualMachineFromImageDefaults(t *testing.T) {
 	if _, ok := props["vmId"].(string); !ok || props["vmId"] == "" {
 		t.Fatalf("expected properties.vmId to be generated, got %v", props["vmId"])
 	}
-	additionalCapabilities := props["additionalCapabilities"].(map[string]interface{})
-	if additionalCapabilities["hibernationEnabled"] != false || additionalCapabilities["ultraSSDEnabled"] != false {
-		t.Fatalf("expected additionalCapabilities defaults to be false/false, got %v", additionalCapabilities)
+	if _, present := props["additionalCapabilities"]; present {
+		t.Fatalf("expected additionalCapabilities key to be absent when PUT with empty object, got %v", props["additionalCapabilities"])
+	}
+}
+
+func TestVirtualMachineAdditionalCapabilitiesReplay(t *testing.T) {
+	ts := setupServer()
+	defer ts.Close()
+
+	av := "?api-version=2023-09-01"
+	compute := ts.URL + "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Compute"
+
+	baseProps := `"storageProfile":{
+		"imageReference":{"publisher":"Canonical","offer":"0001-com-ubuntu-server-jammy","sku":"22_04-lts","version":"latest"},
+		"osDisk":{"createOption":"FromImage"}
+	},
+	"osProfile":{
+		"computerName":"vm-ac",
+		"adminUsername":"azureuser",
+		"linuxConfiguration":{"ssh":{"publicKeys":[{"path":"/home/azureuser/.ssh/authorized_keys","keyData":"ssh-rsa AAA"}]}}
+	}`
+
+	cases := []struct {
+		name        string
+		acPayload   string // JSON for additionalCapabilities including the leading comma, or empty string to omit
+		wantPresent bool
+		wantFields  map[string]interface{}
+	}{
+		{
+			name:        "omitted",
+			acPayload:   "",
+			wantPresent: false,
+		},
+		{
+			name:        "empty_object",
+			acPayload:   `,"additionalCapabilities":{}`,
+			wantPresent: false,
+		},
+		{
+			name:        "only_ultraSSD_false",
+			acPayload:   `,"additionalCapabilities":{"ultraSSDEnabled":false}`,
+			wantPresent: true,
+			wantFields:  map[string]interface{}{"ultraSSDEnabled": false},
+		},
+		{
+			name:        "both_false",
+			acPayload:   `,"additionalCapabilities":{"ultraSSDEnabled":false,"hibernationEnabled":false}`,
+			wantPresent: true,
+			wantFields:  map[string]interface{}{"ultraSSDEnabled": false, "hibernationEnabled": false},
+		},
+		{
+			name:        "only_hibernation_true",
+			acPayload:   `,"additionalCapabilities":{"hibernationEnabled":true}`,
+			wantPresent: true,
+			wantFields:  map[string]interface{}{"hibernationEnabled": true},
+		},
+	}
+
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			vmName := fmt.Sprintf("vm-ac-%d", i)
+			body := `{"location":"eastus","properties":{` + baseProps + tc.acPayload + `}}`
+			resp := doRequest(t, "PUT", compute+"/virtualMachines/"+vmName+av, body)
+			expectStatus(t, resp, 201)
+			resp.Body.Close()
+
+			resp = doRequest(t, "GET", compute+"/virtualMachines/"+vmName+av, "")
+			expectStatus(t, resp, 200)
+			vm := decodeJSON(t, resp)
+			resp.Body.Close()
+
+			props := vm["properties"].(map[string]interface{})
+			ac, present := props["additionalCapabilities"]
+			if present != tc.wantPresent {
+				t.Fatalf("additionalCapabilities presence mismatch: want %v, got %v (value %v)", tc.wantPresent, present, ac)
+			}
+			if !tc.wantPresent {
+				return
+			}
+			acMap := ac.(map[string]interface{})
+			if len(acMap) != len(tc.wantFields) {
+				t.Fatalf("additionalCapabilities should have %d field(s), got %v", len(tc.wantFields), acMap)
+			}
+			for k, v := range tc.wantFields {
+				if acMap[k] != v {
+					t.Fatalf("additionalCapabilities[%q] = %v, want %v", k, acMap[k], v)
+				}
+			}
+		})
+	}
+}
+
+func TestVirtualMachinePatchPreservesAdditionalCapabilities(t *testing.T) {
+	ts := setupServer()
+	defer ts.Close()
+
+	av := "?api-version=2023-09-01"
+	compute := ts.URL + "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Compute"
+
+	body := `{
+		"location":"eastus",
+		"properties":{
+			"additionalCapabilities":{"ultraSSDEnabled":true},
+			"storageProfile":{
+				"imageReference":{"publisher":"Canonical","offer":"0001-com-ubuntu-server-jammy","sku":"22_04-lts","version":"latest"},
+				"osDisk":{"createOption":"FromImage"}
+			},
+			"osProfile":{
+				"computerName":"vm-ac-patch",
+				"adminUsername":"azureuser",
+				"linuxConfiguration":{"ssh":{"publicKeys":[{"path":"/home/azureuser/.ssh/authorized_keys","keyData":"ssh-rsa AAA"}]}}
+			}
+		}
+	}`
+	resp := doRequest(t, "PUT", compute+"/virtualMachines/vm-ac-patch"+av, body)
+	expectStatus(t, resp, 201)
+	resp.Body.Close()
+
+	// PATCH a tag, do not mention additionalCapabilities: the existing
+	// single-field map must be preserved with no auto-fill of the other key.
+	resp = doRequest(t, "PATCH", compute+"/virtualMachines/vm-ac-patch"+av, `{"tags":{"env":"prod"}}`)
+	expectStatus(t, resp, 200)
+	resp.Body.Close()
+
+	resp = doRequest(t, "GET", compute+"/virtualMachines/vm-ac-patch"+av, "")
+	expectStatus(t, resp, 200)
+	vm := decodeJSON(t, resp)
+	resp.Body.Close()
+
+	props := vm["properties"].(map[string]interface{})
+	ac, ok := props["additionalCapabilities"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected additionalCapabilities to be present after PATCH, got %v", props["additionalCapabilities"])
+	}
+	if len(ac) != 1 || ac["ultraSSDEnabled"] != true {
+		t.Fatalf("expected additionalCapabilities to be {ultraSSDEnabled:true} after PATCH, got %v", ac)
 	}
 }
 
