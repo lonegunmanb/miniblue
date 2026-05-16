@@ -10,6 +10,12 @@ miniblue emulates Azure Key Vault secret management. Create, read, list, and del
 | `GET` | `/keyvault/{vault}/secrets/{name}` | Get a secret |
 | `DELETE` | `/keyvault/{vault}/secrets/{name}` | Delete a secret |
 | `GET` | `/keyvault/{vault}/secrets` | List all secrets |
+| `PUT` | `https://{vault}.vault.azure.net/secrets/{name}` | Azure SDK/Terraform data-plane set |
+| `GET` | `https://{vault}.vault.azure.net/secrets/{name}[/{version}]` | Azure SDK/Terraform data-plane get |
+| `DELETE` | `https://{vault}.vault.azure.net/secrets/{name}` | Azure SDK/Terraform data-plane delete |
+| `GET`/`DELETE` | `https://{vault}.vault.azure.net/deletedsecrets/{name}` | Soft-delete lookup/purge |
+
+The HTTPS listener certificate includes `*.vault.azure.net` for lab DNS/hosts-file routing.
 
 ## Set a secret
 
@@ -23,12 +29,12 @@ Response:
 
 ```json
 {
-  "id": "https://myvault.vault.azure.net/secrets/db-password",
+  "id": "https://myvault.vault.azure.net/secrets/db-password/1870b9f2c1f",
   "value": "P@ssw0rd123!",
   "attributes": {
-    "created": "2026-01-01T00:00:00Z",
-    "enabled": "true",
-    "updated": "2026-01-01T00:00:00Z"
+    "created": 1778930000,
+    "enabled": true,
+    "updated": 1778930000
   }
 }
 ```
@@ -53,26 +59,26 @@ curl "http://localhost:4566/keyvault/myvault/secrets"
 {
   "value": [
     {
-      "id": "https://myvault.vault.azure.net/secrets/db-password",
-      "value": "P@ssw0rd123!",
+      "id": "https://myvault.vault.azure.net/secrets/db-password/1870b9f2c1f",
       "attributes": {
-        "created": "2026-01-01T00:00:00Z",
-        "enabled": "true",
-        "updated": "2026-01-01T00:00:00Z"
+        "created": 1778930000,
+        "enabled": true,
+        "updated": 1778930000
       }
     },
     {
-      "id": "https://myvault.vault.azure.net/secrets/api-key",
-      "value": "sk-abc123",
+      "id": "https://myvault.vault.azure.net/secrets/api-key/1870b9f2c20",
       "attributes": {
-        "created": "2026-01-01T00:00:01Z",
-        "enabled": "true",
-        "updated": "2026-01-01T00:00:01Z"
+        "created": 1778930001,
+        "enabled": true,
+        "updated": 1778930001
       }
     }
   ]
 }
 ```
+
+List responses return metadata only; secret values are intentionally omitted, matching Azure Key Vault behavior.
 
 ## Delete a secret
 

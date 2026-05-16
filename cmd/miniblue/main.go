@@ -257,7 +257,7 @@ func generateAndSaveCert(dir string) (tls.Certificate, []byte, error) {
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
 		IsCA:                  true,
-		DNSNames:              []string{"localhost", "*.azconfig.io"},
+		DNSNames:              []string{"localhost", "*.azconfig.io", "*.vault.azure.net"},
 		IPAddresses:           []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback},
 	}
 
@@ -282,13 +282,16 @@ func generateAndSaveCert(dir string) (tls.Certificate, []byte, error) {
 func certCoversMiniblueHosts(cert *x509.Certificate) bool {
 	hasLocalhost := false
 	hasAppConfigWildcard := false
+	hasKeyVaultWildcard := false
 	for _, name := range cert.DNSNames {
 		switch strings.ToLower(name) {
 		case "localhost":
 			hasLocalhost = true
 		case "*.azconfig.io":
 			hasAppConfigWildcard = true
+		case "*.vault.azure.net":
+			hasKeyVaultWildcard = true
 		}
 	}
-	return hasLocalhost && hasAppConfigWildcard
+	return hasLocalhost && hasAppConfigWildcard && hasKeyVaultWildcard
 }
