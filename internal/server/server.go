@@ -19,6 +19,7 @@ import (
 	"github.com/moabukar/miniblue/internal/services/appgw"
 	"github.com/moabukar/miniblue/internal/services/apps"
 	"github.com/moabukar/miniblue/internal/services/auth"
+	"github.com/moabukar/miniblue/internal/services/authorization"
 	"github.com/moabukar/miniblue/internal/services/blob"
 	"github.com/moabukar/miniblue/internal/services/compute"
 	"github.com/moabukar/miniblue/internal/services/cosmosdb"
@@ -236,6 +237,10 @@ func (s *Server) setupRoutes() {
 		if allowed == nil || serviceEnabled("storageaccounts", allowed) {
 			s.services = append(s.services, "storageaccounts")
 		}
+	}
+	if serviceEnabled("authorization", allowed) {
+		authorization.NewHandler(s.store).Register(s.router)
+		s.services = append(s.services, "authorization")
 	}
 }
 

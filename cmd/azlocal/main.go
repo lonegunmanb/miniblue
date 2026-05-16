@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha1"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,6 +52,8 @@ func main() {
 		handleAppConfig(args[1:])
 	case "identity":
 		handleIdentity(args[1:])
+	case "role":
+		handleRole(args[1:])
 	case "functionapp":
 		handleFunctions(args[1:])
 	case "dns":
@@ -105,6 +109,7 @@ Commands:
   servicebus   Service Bus operations
   appconfig    App Configuration operations
   identity     User-assigned managed identity operations
+  role         Azure RBAC role assignment and definition operations
   functionapp  Azure Functions operations
   dns          DNS zone and record operations
   eventgrid    Event Grid topic operations
@@ -1007,6 +1012,150 @@ func handleIdentity(args []string) {
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown subcommand: identity %s\n", args[0])
 	}
+}
+
+// --- RBAC ---
+
+var builtinRoleDefinitionIDs = map[string]string{
+	"reader":                        "acdd72a7-3385-48ef-bd42-f606fba81ae7",
+	"contributor":                   "b24988ac-6180-42a0-ab88-20f7382dd24c",
+	"owner":                         "8e3af657-a8ff-443c-a75c-2fe8c4bcb635",
+	"storage blob data reader":      "2a2b9908-6ea1-4ae2-8e65-a410df84e7d1",
+	"storage blob data contributor": "ba92f5b4-2d11-453d-a403-e96b0029c9fe",
+	"key vault secrets user":        "4633458b-17de-408a-b874-0445c86b69e6",
+	"key vault secrets officer":     "b86a8fe4-44ce-4948-aee5-eccb2c155cd7",
+	"app configuration data reader": "516239f1-63e1-4d78-a4de-a74fb236a071",
+}
+
+func handleRole(args []string) {
+	if len(args) < 2 {
+		fmt.Println("Usage: azlocal role <assignment|definition> <create|list|show|delete> [flags]")
+		return
+	}
+	switch args[0] {
+	case "assignment":
+		handleRoleAssignment(args[1:])
+	case "definition":
+		handleRoleDefinition(args[1:])
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown subcommand: role %s\n", args[0])
+		os.Exit(1)
+	}
+}
+
+func handleRoleAssignment(args []string) {
+	if len(args) == 0 {
+		fmt.Println("Usage: azlocal role assignment <create|list|show|delete> [flags]")
+		return
+	}
+	scope := roleScope(args)
+	base := scope + "/providers/Microsoft.Authorization/roleAssignments"
+	switch args[0] {
+	case "create":
+		principalID := firstNonEmpty(getFlag(args, "assignee"), getFlag(args, "principal-id"))
+		if principalID == "" {
+			fmt.Fprintln(os.Stderr, "Error: --assignee is required")
+			os.Exit(1)
+		}
+		roleDefinitionID := roleDefinitionID(scope, firstNonEmpty(getFlag(args, "role-definition-id"), getFlag(args, "role")))
+		if roleDefinitionID == "" {
+			fmt.Fprintln(os.Stderr, "Error: --role or --role-definition-id is required")
+			os.Exit(1)
+		}
+		name := getFlag(args, "name")
+		if name == "" {
+			name = deterministicGUID(scope + "|" + principalID + "|" + roleDefinitionID)
+		}
+		principalType := getFlag(args, "principal-type")
+		if principalType == "" {
+			principalType = "ServicePrincipal"
+		}
+		doPut(base+"/"+name, map[string]interface{}{
+			"properties": map[string]interface{}{
+				"principalId":      principalID,
+				"principalType":    principalType,
+				"roleDefinitionId": roleDefinitionID,
+			},
+		})
+	case "list":
+		doGet(base)
+	case "show":
+		name := requireFlag(args, "name")
+		doGet(base + "/" + name)
+	case "delete":
+		name := requireFlag(args, "name")
+		doDelete(base + "/" + name)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown subcommand: role assignment %s\n", args[0])
+		os.Exit(1)
+	}
+}
+
+func handleRoleDefinition(args []string) {
+	if len(args) == 0 {
+		fmt.Println("Usage: azlocal role definition <create|list|show|delete> [flags]")
+		return
+	}
+	scope := roleScope(args)
+	base := scope + "/providers/Microsoft.Authorization/roleDefinitions"
+	switch args[0] {
+	case "create":
+		name := requireFlag(args, "name")
+		roleName := firstNonEmpty(getFlag(args, "role-name"), name)
+		doPut(base+"/"+name, map[string]interface{}{
+			"properties": map[string]interface{}{
+				"roleName":         roleName,
+				"type":             "CustomRole",
+				"description":      getFlag(args, "description"),
+				"assignableScopes": []interface{}{scope},
+				"permissions":      []interface{}{},
+			},
+		})
+	case "list":
+		path := base
+		if name := getFlag(args, "name"); name != "" {
+			path += "?$filter=" + url.QueryEscape("roleName eq '"+name+"'")
+		}
+		doGet(path)
+	case "show":
+		name := requireFlag(args, "name")
+		if id := builtinRoleDefinitionIDs[strings.ToLower(name)]; id != "" {
+			name = id
+		}
+		doGet(base + "/" + name)
+	case "delete":
+		name := requireFlag(args, "name")
+		doDelete(base + "/" + name)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown subcommand: role definition %s\n", args[0])
+		os.Exit(1)
+	}
+}
+
+func roleScope(args []string) string {
+	if scope := getFlag(args, "scope"); scope != "" {
+		return scope
+	}
+	return "/subscriptions/" + sub(args)
+}
+
+func roleDefinitionID(scope, role string) string {
+	if role == "" {
+		return ""
+	}
+	if strings.HasPrefix(role, "/") {
+		return role
+	}
+	id := builtinRoleDefinitionIDs[strings.ToLower(role)]
+	if id == "" {
+		id = role
+	}
+	return scope + "/providers/Microsoft.Authorization/roleDefinitions/" + id
+}
+
+func deterministicGUID(seed string) string {
+	sum := sha1.Sum([]byte(seed))
+	return fmt.Sprintf("%x-%x-%x-%x-%x", sum[0:4], sum[4:6], sum[6:8], sum[8:10], sum[10:16])
 }
 
 // --- Functions ---
