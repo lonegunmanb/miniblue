@@ -55,6 +55,8 @@ func main() {
 		handleIdentity(args[1:])
 	case "role":
 		handleRole(args[1:])
+	case "provider":
+		handleProvider(args[1:])
 	case "functionapp":
 		handleFunctions(args[1:])
 	case "dns":
@@ -111,6 +113,7 @@ Commands:
   appconfig    App Configuration operations
   identity     User-assigned managed identity operations
   role         Azure RBAC role assignment and definition operations
+  provider     Azure resource provider operations
   functionapp  Azure Functions operations
   dns          DNS zone and record operations
   eventgrid    Event Grid topic operations
@@ -177,6 +180,9 @@ Examples:
 
   azlocal identity create --resource-group myRG --name myidentity --location eastus
   azlocal identity show --resource-group myRG --name myidentity
+
+  azlocal provider show --namespace Microsoft.Storage
+  azlocal provider list
 
   azlocal acr create --resource-group myRG --name myregistry --location eastus
   azlocal acr list --resource-group myRG
@@ -1317,6 +1323,29 @@ func handleIdentity(args []string) {
 		doDelete(base + "/" + name)
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown subcommand: identity %s\n", args[0])
+	}
+}
+
+// --- Resource Providers ---
+
+func handleProvider(args []string) {
+	if len(args) == 0 {
+		fmt.Println("Usage: azlocal provider <list|show|register> [flags]")
+		return
+	}
+	s := sub(args)
+	switch args[0] {
+	case "list":
+		doGet("/subscriptions/" + s + "/providers")
+	case "show":
+		namespace := requireFlag(args, "namespace")
+		doGet("/subscriptions/" + s + "/providers/" + namespace)
+	case "register":
+		namespace := requireFlag(args, "namespace")
+		doPost("/subscriptions/"+s+"/providers/"+namespace+"/register", nil)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown subcommand: provider %s\n", args[0])
+		os.Exit(1)
 	}
 }
 

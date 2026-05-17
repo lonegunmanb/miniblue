@@ -116,6 +116,25 @@ func providerEntry(namespace string) map[string]interface{} {
 		"id":                "/subscriptions/00000000-0000-0000-0000-000000000000/providers/" + namespace,
 		"namespace":         namespace,
 		"registrationState": "Registered",
-		"resourceTypes":     []interface{}{},
+		"resourceTypes":     providerResourceTypes(namespace),
+	}
+}
+
+func providerResourceTypes(namespace string) []interface{} {
+	switch namespace {
+	case "Microsoft.Storage":
+		return []interface{}{
+			map[string]interface{}{
+				"resourceType": "storageAccounts",
+				"locations":    []interface{}{"eastus", "westus2"},
+				"apiVersions": []interface{}{
+					"2023-05-01",
+					"2023-01-01",
+					"2022-05-01-preview",
+				},
+			},
+		}
+	default:
+		return []interface{}{}
 	}
 }
