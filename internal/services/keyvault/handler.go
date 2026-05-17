@@ -65,6 +65,7 @@ func (h *Handler) Register(r chi.Router) {
 	r.Get("/secrets/", h.ListSecrets)
 	r.Put("/secrets/{secretName}", h.SetSecret)
 	r.Get("/secrets/{secretName}", h.GetSecret)
+	r.Get("/secrets/{secretName}/", h.GetSecret)
 	r.Get("/secrets/{secretName}/{secretVersion}", h.GetSecret)
 	r.Delete("/secrets/{secretName}", h.DeleteSecret)
 	r.Get("/deletedsecrets/{secretName}", h.GetDeletedSecret)
