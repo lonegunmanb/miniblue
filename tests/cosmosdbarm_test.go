@@ -21,7 +21,7 @@ func TestCosmosDBARMAccountCRUD(t *testing.T) {
 	// Create account
 	resp := doRequest(t, "PUT", base, `{"location":"eastus","kind":"GlobalDocumentDB"}`)
 	defer resp.Body.Close()
-	expectStatus(t, resp, 201)
+	expectStatus(t, resp, 200)
 
 	m := decodeJSON(t, resp)
 	if m["name"] != cosmosAcct {

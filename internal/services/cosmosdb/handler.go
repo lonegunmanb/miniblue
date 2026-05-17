@@ -176,16 +176,11 @@ func (h *Handler) CreateOrUpdateAccount(w http.ResponseWriter, r *http.Request) 
 	name := chi.URLParam(r, "accountName")
 
 	k := h.accountKey(sub, rg, name)
-	_, exists := h.store.Get(k)
 
 	acct := h.buildAccountResponse(sub, rg, name)
 	h.store.Set(k, acct)
 
-	if exists {
-		w.WriteHeader(http.StatusOK)
-	} else {
-		w.WriteHeader(http.StatusCreated)
-	}
+	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(acct)
 }
 
