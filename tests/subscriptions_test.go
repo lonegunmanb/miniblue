@@ -26,6 +26,31 @@ func TestSubscriptionsAndTenants(t *testing.T) {
 	}
 }
 
+func TestKeyVaultProviderMetadataIncludesVaults(t *testing.T) {
+	ts := setupServer()
+	defer ts.Close()
+
+	const sub = "00000000-0000-0000-0000-000000000000"
+	resp := doRequest(t, "GET", ts.URL+"/subscriptions/"+sub+"/providers/Microsoft.KeyVault?api-version=2022-12-01", "")
+	defer resp.Body.Close()
+	expectStatus(t, resp, 200)
+
+	provider := decodeJSON(t, resp)
+	for _, resourceType := range provider["resourceTypes"].([]interface{}) {
+		rt := resourceType.(map[string]interface{})
+		if rt["resourceType"] != "vaults" {
+			continue
+		}
+		for _, apiVersion := range rt["apiVersions"].([]interface{}) {
+			if apiVersion == "2023-02-01" {
+				return
+			}
+		}
+		t.Fatalf("expected Key Vault vaults to include api-version 2023-02-01, got %v", rt["apiVersions"])
+	}
+	t.Fatalf("expected Microsoft.KeyVault provider metadata to include vaults, got %v", provider["resourceTypes"])
+}
+
 func TestManagedIdentityToken(t *testing.T) {
 	ts := setupServer()
 	defer ts.Close()

@@ -134,6 +134,17 @@ func providerResourceTypes(namespace string) []interface{} {
 				},
 			},
 		}
+	case "Microsoft.KeyVault":
+		return []interface{}{
+			map[string]interface{}{
+				"resourceType": "vaults",
+				"locations":    []interface{}{"eastus", "westus2"},
+				"apiVersions": []interface{}{
+					"2023-07-01",
+					"2023-02-01",
+				},
+			},
+		}
 	default:
 		return []interface{}{}
 	}
