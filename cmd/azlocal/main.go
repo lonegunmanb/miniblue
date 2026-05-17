@@ -1360,6 +1360,7 @@ var builtinRoleDefinitionIDs = map[string]string{
 	"key vault secrets user":        "4633458b-17de-408a-b874-0445c86b69e6",
 	"key vault secrets officer":     "b86a8fe4-44ce-4948-aee5-eccb2c155cd7",
 	"app configuration data reader": "516239f1-63e1-4d78-a4de-a74fb236a071",
+	"cosmos db account reader role": "fbdf93bf-df7d-467e-a4d2-9458aa1360c8",
 }
 
 func handleRole(args []string) {

@@ -35,6 +35,7 @@ var builtinRoles = []builtinRole{
 	{ID: "4633458b-17de-408a-b874-0445c86b69e6", Name: "Key Vault Secrets User", Description: "Read secret contents.", DataActions: []interface{}{"Microsoft.KeyVault/vaults/secrets/readSecret/action"}},
 	{ID: "b86a8fe4-44ce-4948-aee5-eccb2c155cd7", Name: "Key Vault Secrets Officer", Description: "Perform any action on the secrets of a key vault, except manage permissions.", DataActions: []interface{}{"Microsoft.KeyVault/vaults/secrets/*"}},
 	{ID: "516239f1-63e1-4d78-a4de-a74fb236a071", Name: "App Configuration Data Reader", Description: "Read App Configuration data.", DataActions: []interface{}{"Microsoft.AppConfiguration/configurationStores/keyValues/read"}},
+	{ID: "fbdf93bf-df7d-467e-a4d2-9458aa1360c8", Name: "Cosmos DB Account Reader Role", Description: "Can read Azure Cosmos DB account data.", Actions: []interface{}{"Microsoft.DocumentDB/databaseAccounts/read"}},
 }
 
 func NewHandler(s *store.Store) *Handler {

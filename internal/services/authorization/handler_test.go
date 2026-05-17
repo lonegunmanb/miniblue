@@ -69,6 +69,24 @@ func TestRoleDefinitionsBuiltinsGetAndFilteredList(t *testing.T) {
 	if filteredProps["roleName"] != "Storage Blob Data Contributor" {
 		t.Fatalf("unexpected filtered role: %#v", values[0])
 	}
+
+	cosmosScope := "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.DocumentDB/databaseAccounts/acct1"
+	cosmos := do(t, h, http.MethodGet, cosmosScope+"/providers/Microsoft.Authorization/roleDefinitions?$filter=roleName%20eq%20'Cosmos%20DB%20Account%20Reader%20Role'", nil)
+	if cosmos.Code != http.StatusOK {
+		t.Fatalf("LIST Cosmos role definitions: want 200, got %d", cosmos.Code)
+	}
+	cosmosBody := decodeMap(t, cosmos)
+	cosmosValues := cosmosBody["value"].([]interface{})
+	if len(cosmosValues) != 1 {
+		t.Fatalf("expected one filtered Cosmos role definition, got %#v", cosmosBody)
+	}
+	cosmosRole := cosmosValues[0].(map[string]interface{})
+	cosmosProps := cosmosRole["properties"].(map[string]interface{})
+	if cosmosRole["name"] != "fbdf93bf-df7d-467e-a4d2-9458aa1360c8" ||
+		cosmosProps["roleName"] != "Cosmos DB Account Reader Role" ||
+		cosmosProps["type"] != "BuiltInRole" {
+		t.Fatalf("unexpected Cosmos role definition: %#v", cosmosRole)
+	}
 }
 
 func TestRoleAssignmentLifecycleAtResourceScope(t *testing.T) {
