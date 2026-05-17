@@ -122,6 +122,24 @@ func TestAppConfigARMStoreListKeys(t *testing.T) {
 	}
 }
 
+func TestAppConfigARMStoreListReplicas(t *testing.T) {
+	ts := setupServer()
+	defer ts.Close()
+	base := appConfigARMBase(ts) + "/" + appConfigStore
+
+	doRequest(t, "PUT", base, `{"location":"eastus","sku":{"name":"free"}}`).Body.Close()
+
+	resp := doRequest(t, "GET", base+"/replicas?api-version=2024-05-01", "")
+	defer resp.Body.Close()
+	expectStatus(t, resp, 200)
+
+	m := decodeJSON(t, resp)
+	items := m["value"].([]interface{})
+	if len(items) != 0 {
+		t.Fatalf("expected no replicas, got %d", len(items))
+	}
+}
+
 func TestAppConfigARMStoreNotFound(t *testing.T) {
 	ts := setupServer()
 	defer ts.Close()

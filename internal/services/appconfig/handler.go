@@ -39,6 +39,7 @@ func (h *Handler) Register(r chi.Router) {
 			r.Get("/", h.GetStore)
 			r.Delete("/", h.DeleteStore)
 			r.Post("/listKeys", h.ListKeys)
+			r.Get("/replicas", h.ListReplicas)
 		})
 	})
 
@@ -230,6 +231,19 @@ func (h *Handler) ListStores(w http.ResponseWriter, r *http.Request) {
 	rg := chi.URLParam(r, "resourceGroupName")
 	items := h.store.ListByPrefix("appconfig:store:" + sub + ":" + rg + ":")
 	json.NewEncoder(w).Encode(map[string]interface{}{"value": items})
+}
+
+func (h *Handler) ListReplicas(w http.ResponseWriter, r *http.Request) {
+	sub := chi.URLParam(r, "subscriptionId")
+	rg := chi.URLParam(r, "resourceGroupName")
+	name := chi.URLParam(r, "configStoreName")
+
+	if _, ok := h.store.Get(h.storeARMKey(sub, rg, name)); !ok {
+		azerr.NotFound(w, "Microsoft.AppConfiguration/configurationStores", name)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{"value": []interface{}{}})
 }
 
 func (h *Handler) ListKeys(w http.ResponseWriter, r *http.Request) {
