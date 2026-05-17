@@ -167,11 +167,16 @@ func parseServicesFilter() map[string]bool {
 }
 
 func (s *Server) setupRoutes() {
+	allowed := parseServicesFilter()
+	var authorizationHandler *authorization.Handler
+	if serviceEnabled("authorization", allowed) {
+		authorizationHandler = authorization.NewHandler(s.store)
+		s.router.Use(authorizationHandler.Middleware)
+	}
+
 	s.router.Get("/health", s.healthHandler)
 	s.router.Get("/metrics", s.metricsHandler)
 	s.router.Post("/_miniblue/reset", s.resetHandler)
-
-	allowed := parseServicesFilter()
 
 	// Cloud metadata + auth (always registered -- core infrastructure)
 	metadata.NewHandler(s.store).Register(s.router)
@@ -239,7 +244,7 @@ func (s *Server) setupRoutes() {
 		}
 	}
 	if serviceEnabled("authorization", allowed) {
-		authorization.NewHandler(s.store).Register(s.router)
+		authorizationHandler.Register(s.router)
 		s.services = append(s.services, "authorization")
 	}
 }

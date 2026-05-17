@@ -1,4 +1,4 @@
-package authorization
+package authorization_test
 
 import (
 	"bytes"
@@ -8,13 +8,15 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/moabukar/miniblue/internal/server"
+	"github.com/moabukar/miniblue/internal/services/authorization"
 	"github.com/moabukar/miniblue/internal/store"
 )
 
 func newTestServer(t *testing.T) http.Handler {
 	t.Helper()
 	r := chi.NewRouter()
-	NewHandler(store.New()).Register(r)
+	authorization.NewHandler(store.New()).Register(r)
 	return r
 }
 
@@ -109,5 +111,81 @@ func TestRoleAssignmentLifecycleAtResourceScope(t *testing.T) {
 	missing := do(t, h, http.MethodGet, path, nil)
 	if missing.Code != http.StatusNotFound {
 		t.Fatalf("GET deleted assignment: want 404, got %d", missing.Code)
+	}
+}
+
+func TestAuthorizationScopesThroughFullServer(t *testing.T) {
+	t.Setenv("SERVICES", "")
+	h := server.New().Handler()
+	scopes := []string{
+		"/subscriptions/00000000-0000-0000-0000-000000000000",
+		"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rbac-rg",
+		"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rbac-rg/providers/Microsoft.KeyVault/vaults/v1",
+		"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rbac-rg/providers/Microsoft.Storage/storageAccounts/sa1",
+		"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rbac-rg/providers/Microsoft.AppConfiguration/configurationStores/ac1",
+		"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rbac-rg/providers/Microsoft.DocumentDB/databaseAccounts/cdb1",
+		"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rbac-rg/providers/Microsoft.Web/sites/web1",
+		"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rbac-rg/providers/Microsoft.Network/virtualNetworks/vnet1",
+	}
+
+	for i, scope := range scopes {
+		t.Run(scope, func(t *testing.T) {
+			defs := do(t, h, http.MethodGet, scope+"/providers/Microsoft.Authorization/roleDefinitions?api-version=2022-05-01-preview", nil)
+			assertOKWithBody(t, defs, http.StatusOK, "GET roleDefinitions")
+
+			name := "11111111-1111-1111-1111-11111111110" + string(rune('0'+i))
+			path := scope + "/providers/Microsoft.Authorization/roleAssignments/" + name + "?api-version=2022-04-01"
+			create := do(t, h, http.MethodPut, path, map[string]interface{}{
+				"properties": map[string]interface{}{
+					"principalId":      "00000000-0000-0000-0000-000000000abc",
+					"principalType":    "ServicePrincipal",
+					"roleDefinitionId": "/providers/Microsoft.Authorization/roleDefinitions/00000000-0000-0000-0000-000000000001",
+				},
+			})
+			if create.Code != http.StatusOK && create.Code != http.StatusCreated {
+				t.Fatalf("PUT roleAssignments: want 200 or 201, got %d: %s", create.Code, create.Body.String())
+			}
+			if create.Body.Len() == 0 {
+				t.Fatalf("PUT roleAssignments: response body is empty")
+			}
+
+			get := do(t, h, http.MethodGet, path, nil)
+			assertOKWithBody(t, get, http.StatusOK, "GET roleAssignments")
+		})
+	}
+}
+
+func TestAuthorizationMiddlewareBypassesFutureLiteralService(t *testing.T) {
+	r := chi.NewRouter()
+	authz := authorization.NewHandler(store.New())
+	r.Use(authz.Middleware)
+	r.Get("/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Fake/widgets/{widgetName}", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	scope := "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Fake/widgets/w1"
+	path := scope + "/providers/Microsoft.Authorization/roleAssignments/22222222-2222-2222-2222-222222222222"
+	create := do(t, r, http.MethodPut, path, map[string]interface{}{
+		"properties": map[string]interface{}{
+			"principalId":      "principal-1",
+			"principalType":    "ServicePrincipal",
+			"roleDefinitionId": "/providers/Microsoft.Authorization/roleDefinitions/acdd72a7-3385-48ef-bd42-f606fba81ae7",
+		},
+	})
+	if create.Code != http.StatusCreated {
+		t.Fatalf("PUT fake-scope role assignment: want 201, got %d: %s", create.Code, create.Body.String())
+	}
+
+	get := do(t, r, http.MethodGet, path, nil)
+	assertOKWithBody(t, get, http.StatusOK, "GET fake-scope role assignment")
+}
+
+func assertOKWithBody(t *testing.T, rr *httptest.ResponseRecorder, want int, op string) {
+	t.Helper()
+	if rr.Code != want {
+		t.Fatalf("%s: want %d, got %d: %s", op, want, rr.Code, rr.Body.String())
+	}
+	if rr.Body.Len() == 0 {
+		t.Fatalf("%s: response body is empty", op)
 	}
 }
