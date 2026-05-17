@@ -337,13 +337,15 @@ func TestRoleDefinitionListAndShow(t *testing.T) {
 	ts := setupMiniblue()
 	defer ts.Close()
 
+	scope := "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/webapp-lab-dev-rg/providers/Microsoft.DocumentDB/databaseAccounts/webapp-lab-dev-cosmos"
 	listOut, _, code := runAzlocal(ts, "role", "definition", "list",
-		"--name", "Storage Blob Data Contributor")
+		"--scope", scope,
+		"--name", "Cosmos DB Account Reader Role")
 	if code != 0 {
 		t.Fatalf("role definition list failed: %s", listOut)
 	}
-	if !strings.Contains(listOut, "Storage Blob Data Contributor") ||
-		!strings.Contains(listOut, "ba92f5b4-2d11-453d-a403-e96b0029c9fe") {
+	if !strings.Contains(listOut, "Cosmos DB Account Reader Role") ||
+		!strings.Contains(listOut, "fbdf93bf-df7d-467e-a4d2-9458aa1360c8") {
 		t.Fatalf("expected filtered built-in role in list output, got: %s", listOut)
 	}
 
