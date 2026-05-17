@@ -16,6 +16,8 @@ type Handler struct {
 	store *store.Store
 }
 
+const authorizationProviderMarker = "/providers/microsoft.authorization/"
+
 type builtinRole struct {
 	ID          string
 	Name        string
@@ -37,6 +39,16 @@ var builtinRoles = []builtinRole{
 
 func NewHandler(s *store.Store) *Handler {
 	return &Handler{store: s}
+}
+
+func (h *Handler) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(strings.ToLower(r.URL.Path), authorizationProviderMarker) {
+			h.Dispatch(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (h *Handler) Register(r chi.Router) {
@@ -66,10 +78,10 @@ func (h *Handler) Dispatch(w http.ResponseWriter, r *http.Request) {
 		azerr.NotFound(w, "Microsoft.Authorization", strings.TrimPrefix(r.URL.Path, "/"))
 		return
 	}
-	switch kind {
-	case "roleAssignments":
+	switch {
+	case strings.EqualFold(kind, "roleAssignments"):
 		h.handleRoleAssignments(w, r, scope, name)
-	case "roleDefinitions":
+	case strings.EqualFold(kind, "roleDefinitions"):
 		h.handleRoleDefinitions(w, r, scope, name)
 	default:
 		azerr.NotFound(w, "Microsoft.Authorization", kind)
@@ -77,13 +89,12 @@ func (h *Handler) Dispatch(w http.ResponseWriter, r *http.Request) {
 }
 
 func parseAuthorizationPath(path string) (scope, kind, name string, ok bool) {
-	const marker = "/providers/Microsoft.Authorization/"
-	idx := strings.Index(path, marker)
+	idx := strings.Index(strings.ToLower(path), authorizationProviderMarker)
 	if idx <= 0 {
 		return "", "", "", false
 	}
 	scope = path[:idx]
-	parts := strings.Split(strings.Trim(path[idx+len(marker):], "/"), "/")
+	parts := strings.Split(strings.Trim(path[idx+len(authorizationProviderMarker):], "/"), "/")
 	if len(parts) == 0 || parts[0] == "" {
 		return "", "", "", false
 	}
