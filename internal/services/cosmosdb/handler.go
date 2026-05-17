@@ -25,6 +25,10 @@ func (h *Handler) Register(r chi.Router) {
 			r.Put("/", h.CreateOrUpdateAccount)
 			r.Get("/", h.GetAccount)
 			r.Delete("/", h.DeleteAccount)
+			r.Post("/listKeys", h.ListKeys)
+			r.Post("/readonlykeys", h.ListReadOnlyKeys)
+			r.Post("/listConnectionStrings", h.ListConnectionStrings)
+			r.Post("/regenerateKey", h.RegenerateKey)
 			r.Route("/sqlDatabases", func(r chi.Router) {
 				r.Get("/", h.ListSQLDatabases)
 				r.Route("/{dbName}", func(r chi.Router) {
@@ -231,6 +235,62 @@ func (h *Handler) ListAccounts(w http.ResponseWriter, r *http.Request) {
 	rg := chi.URLParam(r, "resourceGroupName")
 	items := h.store.ListByPrefix("cosmos:account:" + sub + ":" + rg + ":")
 	json.NewEncoder(w).Encode(map[string]interface{}{"value": items})
+}
+
+func (h *Handler) accountOperationAccountName(w http.ResponseWriter, r *http.Request) (string, bool) {
+	sub := chi.URLParam(r, "subscriptionId")
+	rg := chi.URLParam(r, "resourceGroupName")
+	name := chi.URLParam(r, "accountName")
+	if !h.store.Exists(h.accountKey(sub, rg, name)) {
+		azerr.NotFound(w, "Microsoft.DocumentDB/databaseAccounts", name)
+		return "", false
+	}
+	return name, true
+}
+
+func accountKeysResponse() map[string]interface{} {
+	return map[string]interface{}{
+		"primaryMasterKey":           "miniblue-primary-master-key",
+		"secondaryMasterKey":         "miniblue-secondary-master-key",
+		"primaryReadonlyMasterKey":   "miniblue-primary-readonly-master-key",
+		"secondaryReadonlyMasterKey": "miniblue-secondary-readonly-master-key",
+	}
+}
+
+func (h *Handler) ListKeys(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.accountOperationAccountName(w, r); !ok {
+		return
+	}
+	json.NewEncoder(w).Encode(accountKeysResponse())
+}
+
+func (h *Handler) ListReadOnlyKeys(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.accountOperationAccountName(w, r); !ok {
+		return
+	}
+	json.NewEncoder(w).Encode(accountKeysResponse())
+}
+
+func (h *Handler) ListConnectionStrings(w http.ResponseWriter, r *http.Request) {
+	name, ok := h.accountOperationAccountName(w, r)
+	if !ok {
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"connectionStrings": []map[string]interface{}{
+			{
+				"connectionString": "AccountEndpoint=https://" + name + ".documents.azure.com:443/;AccountKey=miniblue-primary-master-key;",
+				"description":      "Primary SQL Connection String",
+			},
+		},
+	})
+}
+
+func (h *Handler) RegenerateKey(w http.ResponseWriter, r *http.Request) {
+	if _, ok := h.accountOperationAccountName(w, r); !ok {
+		return
+	}
+	json.NewEncoder(w).Encode(accountKeysResponse())
 }
 
 // --- ARM SQL Database handlers ---
