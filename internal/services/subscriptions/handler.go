@@ -145,6 +145,30 @@ func providerResourceTypes(namespace string) []interface{} {
 				},
 			},
 		}
+	case "Microsoft.DocumentDB":
+		return []interface{}{
+			map[string]interface{}{
+				"resourceType": "databaseAccounts",
+				"locations":    []interface{}{"eastus", "westus2"},
+				"apiVersions": []interface{}{
+					"2023-04-15",
+				},
+			},
+			map[string]interface{}{
+				"resourceType": "databaseAccounts/tables",
+				"locations":    []interface{}{"eastus", "westus2"},
+				"apiVersions": []interface{}{
+					"2023-04-15",
+				},
+			},
+			map[string]interface{}{
+				"resourceType": "databaseAccounts/sqlDatabases",
+				"locations":    []interface{}{"eastus", "westus2"},
+				"apiVersions": []interface{}{
+					"2023-04-15",
+				},
+			},
+		}
 	default:
 		return []interface{}{}
 	}

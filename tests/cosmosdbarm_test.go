@@ -56,6 +56,39 @@ func TestCosmosDBARMAccountCRUD(t *testing.T) {
 	expectStatus(t, resp3, 200)
 }
 
+func TestCosmosDBARMAccountActions(t *testing.T) {
+	ts := setupServer()
+	defer ts.Close()
+	base := cosmosARMBase(ts) + "/" + cosmosAcct
+
+	resp := doRequest(t, "PUT", base+"?api-version=2023-04-15", `{"location":"eastus","kind":"GlobalDocumentDB"}`)
+	resp.Body.Close()
+	expectStatus(t, resp, 200)
+
+	resp = doRequest(t, "POST", base+"/listKeys?api-version=2023-04-15", "")
+	expectStatus(t, resp, 200)
+	keys := decodeJSON(t, resp)
+	resp.Body.Close()
+	for _, field := range []string{"primaryMasterKey", "secondaryMasterKey", "primaryReadonlyMasterKey", "secondaryReadonlyMasterKey"} {
+		if keys[field] == "" {
+			t.Fatalf("expected %s in listKeys response", field)
+		}
+	}
+
+	resp = doRequest(t, "POST", base+"/listConnectionStrings?api-version=2023-04-15", "")
+	expectStatus(t, resp, 200)
+	body := decodeJSON(t, resp)
+	resp.Body.Close()
+	strings, ok := body["connectionStrings"].([]interface{})
+	if !ok || len(strings) == 0 {
+		t.Fatalf("expected non-empty connectionStrings array, got %v", body["connectionStrings"])
+	}
+	first := strings[0].(map[string]interface{})
+	if first["connectionString"] == "" || first["description"] == "" {
+		t.Fatalf("expected connectionString and description, got %v", first)
+	}
+}
+
 func TestCosmosDBARMAccountCapabilitiesRoundTrip(t *testing.T) {
 	ts := setupServer()
 	defer ts.Close()
