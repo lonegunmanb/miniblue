@@ -172,7 +172,7 @@ func TestCosmosDBARMSQLDatabaseCRUD(t *testing.T) {
 	// Create database
 	resp := doRequest(t, "PUT", dbBase, `{}`)
 	defer resp.Body.Close()
-	expectStatus(t, resp, 201)
+	expectStatus(t, resp, 200)
 
 	m := decodeJSON(t, resp)
 	if m["name"] != "mydb" {
@@ -218,7 +218,7 @@ func TestCosmosDBARMContainerCRUD(t *testing.T) {
 	// Create container
 	resp := doRequest(t, "PUT", cBase, `{}`)
 	defer resp.Body.Close()
-	expectStatus(t, resp, 201)
+	expectStatus(t, resp, 200)
 
 	m := decodeJSON(t, resp)
 	if m["name"] != "users" {
@@ -263,7 +263,7 @@ func TestCosmosDBARMTableCRUD(t *testing.T) {
 
 	resp := doRequest(t, "PUT", tableBase, body)
 	defer resp.Body.Close()
-	expectStatus(t, resp, 201)
+	expectStatus(t, resp, 200)
 
 	m := decodeJSON(t, resp)
 	if m["name"] != "users" {
@@ -318,7 +318,7 @@ func TestCosmosDBARMTableThroughputSettings(t *testing.T) {
 
 	resp := doRequest(t, "PUT", throughputBase, body)
 	defer resp.Body.Close()
-	expectStatus(t, resp, 201)
+	expectStatus(t, resp, 200)
 
 	m := decodeJSON(t, resp)
 	if m["name"] != "default" {

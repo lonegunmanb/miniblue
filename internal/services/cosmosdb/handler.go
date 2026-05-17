@@ -306,7 +306,6 @@ func (h *Handler) CreateOrUpdateSQLDatabase(w http.ResponseWriter, r *http.Reque
 	dbName := chi.URLParam(r, "dbName")
 
 	k := h.sqlDbKey(sub, rg, acct, dbName)
-	_, exists := h.store.Get(k)
 
 	db := map[string]interface{}{
 		"id":   "/subscriptions/" + sub + "/resourceGroups/" + rg + "/providers/Microsoft.DocumentDB/databaseAccounts/" + acct + "/sqlDatabases/" + dbName,
@@ -318,11 +317,7 @@ func (h *Handler) CreateOrUpdateSQLDatabase(w http.ResponseWriter, r *http.Reque
 	}
 	h.store.Set(k, db)
 
-	if exists {
-		w.WriteHeader(http.StatusOK)
-	} else {
-		w.WriteHeader(http.StatusCreated)
-	}
+	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(db)
 }
 
@@ -375,7 +370,6 @@ func (h *Handler) CreateOrUpdateContainer(w http.ResponseWriter, r *http.Request
 	name := chi.URLParam(r, "containerName")
 
 	k := h.containerKey(sub, rg, acct, dbName, name)
-	_, exists := h.store.Get(k)
 
 	c := map[string]interface{}{
 		"id":   "/subscriptions/" + sub + "/resourceGroups/" + rg + "/providers/Microsoft.DocumentDB/databaseAccounts/" + acct + "/sqlDatabases/" + dbName + "/containers/" + name,
@@ -393,11 +387,7 @@ func (h *Handler) CreateOrUpdateContainer(w http.ResponseWriter, r *http.Request
 	}
 	h.store.Set(k, c)
 
-	if exists {
-		w.WriteHeader(http.StatusOK)
-	} else {
-		w.WriteHeader(http.StatusCreated)
-	}
+	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(c)
 }
 
@@ -456,7 +446,6 @@ func (h *Handler) CreateOrUpdateTable(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "tableName")
 
 	k := h.tableKey(sub, rg, acct, name)
-	_, exists := h.store.Get(k)
 
 	table := map[string]interface{}{}
 	json.NewDecoder(r.Body).Decode(&table)
@@ -465,11 +454,7 @@ func (h *Handler) CreateOrUpdateTable(w http.ResponseWriter, r *http.Request) {
 	table["type"] = "Microsoft.DocumentDB/databaseAccounts/tables"
 	h.store.Set(k, table)
 
-	if exists {
-		w.WriteHeader(http.StatusOK)
-	} else {
-		w.WriteHeader(http.StatusCreated)
-	}
+	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(table)
 }
 
@@ -516,7 +501,6 @@ func (h *Handler) CreateOrUpdateTableThroughput(w http.ResponseWriter, r *http.R
 	tableName := chi.URLParam(r, "tableName")
 
 	k := h.tableThroughputKey(sub, rg, acct, tableName)
-	_, exists := h.store.Get(k)
 
 	throughput := map[string]interface{}{}
 	json.NewDecoder(r.Body).Decode(&throughput)
@@ -525,11 +509,7 @@ func (h *Handler) CreateOrUpdateTableThroughput(w http.ResponseWriter, r *http.R
 	throughput["type"] = "Microsoft.DocumentDB/databaseAccounts/tables/throughputSettings"
 	h.store.Set(k, throughput)
 
-	if exists {
-		w.WriteHeader(http.StatusOK)
-	} else {
-		w.WriteHeader(http.StatusCreated)
-	}
+	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(throughput)
 }
 
