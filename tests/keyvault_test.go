@@ -64,6 +64,14 @@ func TestKeyVaultDataPlaneVaultAzureNetHostCRUD(t *testing.T) {
 	}
 	version := id[strings.LastIndex(id, "/")+1:]
 
+	respTrailingSlash := doAppConfigHostRequest(t, "GET", base+"/?api-version=7.4", host, "")
+	defer respTrailingSlash.Body.Close()
+	expectStatus(t, respTrailingSlash, 200)
+	m = decodeJSON(t, respTrailingSlash)
+	if m["value"] != "supersecret" {
+		t.Fatalf("expected trailing-slash get value=supersecret, got %v", m["value"])
+	}
+
 	resp2 := doAppConfigHostRequest(t, "GET", base+"/"+version+"?api-version=7.4", host, "")
 	defer resp2.Body.Close()
 	expectStatus(t, resp2, 200)
