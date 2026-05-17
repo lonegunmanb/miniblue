@@ -149,7 +149,16 @@ func (h *Handler) accountKey(sub, rg, name string) string {
 	return "cosmos:account:" + sub + ":" + rg + ":" + name
 }
 
-func (h *Handler) buildAccountResponse(sub, rg, name string) map[string]interface{} {
+func accountArrayProperty(props map[string]interface{}, key string) interface{} {
+	if v, ok := props[key].([]interface{}); ok {
+		return v
+	}
+	return []interface{}{}
+}
+
+func (h *Handler) buildAccountResponse(sub, rg, name string, input map[string]interface{}) map[string]interface{} {
+	props, _ := input["properties"].(map[string]interface{})
+
 	return map[string]interface{}{
 		"id":       "/subscriptions/" + sub + "/resourceGroups/" + rg + "/providers/Microsoft.DocumentDB/databaseAccounts/" + name,
 		"name":     name,
@@ -166,6 +175,11 @@ func (h *Handler) buildAccountResponse(sub, rg, name string) map[string]interfac
 			"locations": []map[string]interface{}{
 				{"locationName": "East US", "failoverPriority": 0, "isZoneRedundant": false},
 			},
+			"capabilities":                accountArrayProperty(props, "capabilities"),
+			"ipRules":                     accountArrayProperty(props, "ipRules"),
+			"virtualNetworkRules":         accountArrayProperty(props, "virtualNetworkRules"),
+			"cors":                        accountArrayProperty(props, "cors"),
+			"networkAclBypassResourceIds": accountArrayProperty(props, "networkAclBypassResourceIds"),
 		},
 	}
 }
@@ -177,7 +191,10 @@ func (h *Handler) CreateOrUpdateAccount(w http.ResponseWriter, r *http.Request) 
 
 	k := h.accountKey(sub, rg, name)
 
-	acct := h.buildAccountResponse(sub, rg, name)
+	input := map[string]interface{}{}
+	json.NewDecoder(r.Body).Decode(&input)
+
+	acct := h.buildAccountResponse(sub, rg, name, input)
 	h.store.Set(k, acct)
 
 	w.WriteHeader(http.StatusOK)
