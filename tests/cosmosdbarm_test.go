@@ -37,6 +37,13 @@ func TestCosmosDBARMAccountCRUD(t *testing.T) {
 	if props["documentEndpoint"] == nil {
 		t.Fatal("expected documentEndpoint in properties")
 	}
+	for _, field := range []string{"capabilities", "ipRules", "virtualNetworkRules", "cors", "networkAclBypassResourceIds"} {
+		if items, ok := props[field].([]interface{}); !ok {
+			t.Fatalf("expected %s to be an array, got %T", field, props[field])
+		} else if len(items) != 0 {
+			t.Fatalf("expected %s to default empty, got %v", field, items)
+		}
+	}
 
 	// Get account
 	resp2 := doRequest(t, "GET", base, "")
@@ -47,6 +54,35 @@ func TestCosmosDBARMAccountCRUD(t *testing.T) {
 	resp3 := doRequest(t, "PUT", base, `{"location":"eastus"}`)
 	defer resp3.Body.Close()
 	expectStatus(t, resp3, 200)
+}
+
+func TestCosmosDBARMAccountCapabilitiesRoundTrip(t *testing.T) {
+	ts := setupServer()
+	defer ts.Close()
+	base := cosmosARMBase(ts) + "/" + cosmosAcct
+	body := `{"location":"eastus","kind":"GlobalDocumentDB","properties":{"capabilities":[{"name":"EnableTable"}]}}`
+
+	resp := doRequest(t, "PUT", base, body)
+	defer resp.Body.Close()
+	expectStatus(t, resp, 200)
+
+	resp2 := doRequest(t, "GET", base, "")
+	defer resp2.Body.Close()
+	expectStatus(t, resp2, 200)
+
+	m := decodeJSON(t, resp2)
+	props := m["properties"].(map[string]interface{})
+	capabilities, ok := props["capabilities"].([]interface{})
+	if !ok {
+		t.Fatalf("expected capabilities to be an array, got %T", props["capabilities"])
+	}
+	if len(capabilities) != 1 {
+		t.Fatalf("expected one capability, got %v", capabilities)
+	}
+	capability := capabilities[0].(map[string]interface{})
+	if capability["name"] != "EnableTable" {
+		t.Fatalf("expected capability name EnableTable, got %v", capability["name"])
+	}
 }
 
 func TestCosmosDBARMAccountList(t *testing.T) {
