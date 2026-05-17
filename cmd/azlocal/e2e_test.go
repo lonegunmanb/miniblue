@@ -148,6 +148,19 @@ func TestStorageAccountMissingResourceGroup(t *testing.T) {
 	}
 }
 
+func TestProviderShowIncludesStorageAccountPreviewAPIVersion(t *testing.T) {
+	ts := setupMiniblue()
+	defer ts.Close()
+
+	output, _, code := runAzlocal(ts, "provider", "show", "--namespace", "Microsoft.Storage")
+	if code != 0 {
+		t.Fatalf("provider show failed: %s", output)
+	}
+	if !strings.Contains(output, "storageAccounts") || !strings.Contains(output, "2022-05-01-preview") {
+		t.Fatalf("expected storage account preview api-version in output, got: %s", output)
+	}
+}
+
 func TestAppConfigStoreCommands(t *testing.T) {
 	ts := setupMiniblue()
 	defer ts.Close()
