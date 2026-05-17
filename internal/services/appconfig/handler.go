@@ -38,6 +38,7 @@ func (h *Handler) Register(r chi.Router) {
 			r.Put("/", h.CreateOrUpdateStore)
 			r.Get("/", h.GetStore)
 			r.Delete("/", h.DeleteStore)
+			r.Post("/listKeys", h.ListKeys)
 		})
 	})
 
@@ -140,22 +141,40 @@ func (h *Handler) storeARMKey(sub, rg, name string) string {
 	return "appconfig:store:" + sub + ":" + rg + ":" + name
 }
 
-func (h *Handler) buildStoreResponse(sub, rg, name string) map[string]interface{} {
-	return map[string]interface{}{
-		"id":       "/subscriptions/" + sub + "/resourceGroups/" + rg + "/providers/Microsoft.AppConfiguration/configurationStores/" + name,
-		"name":     name,
-		"type":     "Microsoft.AppConfiguration/configurationStores",
-		"location": "eastus",
-		"sku": map[string]interface{}{
-			"name": "Standard",
-		},
-		"properties": map[string]interface{}{
-			"provisioningState": "Succeeded",
-			"endpoint":          "https://" + name + ".azconfig.io",
-			"creationDate":      "2026-01-01T00:00:00Z",
-			"disableLocalAuth":  false,
-		},
+func (h *Handler) buildStoreResponse(sub, rg, name string, body map[string]interface{}) map[string]interface{} {
+	location, _ := body["location"].(string)
+	if location == "" {
+		location = "eastus"
 	}
+	sku, _ := body["sku"].(map[string]interface{})
+	if sku == nil {
+		sku = map[string]interface{}{"name": "free"}
+	}
+	properties, _ := body["properties"].(map[string]interface{})
+	if properties == nil {
+		properties = map[string]interface{}{}
+	}
+	properties["provisioningState"] = "Succeeded"
+	properties["endpoint"] = "https://" + name + ".azconfig.io"
+	if _, ok := properties["creationDate"]; !ok {
+		properties["creationDate"] = "2026-01-01T00:00:00Z"
+	}
+	if _, ok := properties["disableLocalAuth"]; !ok {
+		properties["disableLocalAuth"] = false
+	}
+
+	store := map[string]interface{}{
+		"id":         "/subscriptions/" + sub + "/resourceGroups/" + rg + "/providers/Microsoft.AppConfiguration/configurationStores/" + name,
+		"name":       name,
+		"type":       "Microsoft.AppConfiguration/configurationStores",
+		"location":   location,
+		"sku":        sku,
+		"properties": properties,
+	}
+	if tags, ok := body["tags"]; ok {
+		store["tags"] = tags
+	}
+	return store
 }
 
 func (h *Handler) CreateOrUpdateStore(w http.ResponseWriter, r *http.Request) {
@@ -166,7 +185,11 @@ func (h *Handler) CreateOrUpdateStore(w http.ResponseWriter, r *http.Request) {
 	k := h.storeARMKey(sub, rg, name)
 	_, exists := h.store.Get(k)
 
-	store := h.buildStoreResponse(sub, rg, name)
+	var body map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		body = map[string]interface{}{}
+	}
+	store := h.buildStoreResponse(sub, rg, name, body)
 	h.store.Set(k, store)
 
 	if exists {
@@ -207,4 +230,45 @@ func (h *Handler) ListStores(w http.ResponseWriter, r *http.Request) {
 	rg := chi.URLParam(r, "resourceGroupName")
 	items := h.store.ListByPrefix("appconfig:store:" + sub + ":" + rg + ":")
 	json.NewEncoder(w).Encode(map[string]interface{}{"value": items})
+}
+
+func (h *Handler) ListKeys(w http.ResponseWriter, r *http.Request) {
+	sub := chi.URLParam(r, "subscriptionId")
+	rg := chi.URLParam(r, "resourceGroupName")
+	name := chi.URLParam(r, "configStoreName")
+
+	v, ok := h.store.Get(h.storeARMKey(sub, rg, name))
+	if !ok {
+		azerr.NotFound(w, "Microsoft.AppConfiguration/configurationStores", name)
+		return
+	}
+
+	endpoint := "https://" + name + ".azconfig.io"
+	if store, ok := v.(map[string]interface{}); ok {
+		if properties, ok := store["properties"].(map[string]interface{}); ok {
+			if e, ok := properties["endpoint"].(string); ok && e != "" {
+				endpoint = e
+			}
+		}
+	}
+
+	keys := []map[string]interface{}{
+		{
+			"id":               "primary",
+			"name":             "Primary",
+			"value":            "miniblue-primary-key",
+			"connectionString": "Endpoint=" + endpoint + ";Id=primary;Secret=miniblue-primary-key",
+			"lastModified":     "2024-01-01T00:00:00Z",
+			"readOnly":         false,
+		},
+		{
+			"id":               "secondary",
+			"name":             "Secondary",
+			"value":            "miniblue-secondary-key",
+			"connectionString": "Endpoint=" + endpoint + ";Id=secondary;Secret=miniblue-secondary-key",
+			"lastModified":     "2024-01-01T00:00:00Z",
+			"readOnly":         false,
+		},
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"value": keys})
 }

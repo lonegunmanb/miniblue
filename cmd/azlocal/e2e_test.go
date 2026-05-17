@@ -148,6 +148,38 @@ func TestStorageAccountMissingResourceGroup(t *testing.T) {
 	}
 }
 
+func TestAppConfigStoreCommands(t *testing.T) {
+	ts := setupMiniblue()
+	defer ts.Close()
+
+	output, _, _ := runAzlocal(ts, "appconfig", "store", "create",
+		"--resource-group", "myRG",
+		"--name", "appcfg",
+		"--sku", "free")
+	if !strings.Contains(output, "appcfg") || !strings.Contains(output, "Microsoft.AppConfiguration/configurationStores") {
+		t.Fatalf("expected app configuration store in output, got: %s", output)
+	}
+
+	listOutput, _, _ := runAzlocal(ts, "appconfig", "store", "list", "--resource-group", "myRG")
+	if !strings.Contains(listOutput, "appcfg") {
+		t.Fatalf("expected store in list output, got: %s", listOutput)
+	}
+
+	keysOutput, _, _ := runAzlocal(ts, "appconfig", "store", "list-keys",
+		"--resource-group", "myRG",
+		"--name", "appcfg")
+	if !strings.Contains(keysOutput, "Primary") || !strings.Contains(keysOutput, "miniblue-primary-key") {
+		t.Fatalf("expected app configuration keys in output, got: %s", keysOutput)
+	}
+
+	deleteOutput, _, _ := runAzlocal(ts, "appconfig", "store", "delete",
+		"--resource-group", "myRG",
+		"--name", "appcfg")
+	if !strings.Contains(strings.ToLower(deleteOutput), "deleted") {
+		t.Fatalf("expected delete confirmation, got: %s", deleteOutput)
+	}
+}
+
 func TestStorageAccountManagementPolicyCommands(t *testing.T) {
 	ts := setupMiniblue()
 	defer ts.Close()

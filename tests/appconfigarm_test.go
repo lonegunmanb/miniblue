@@ -97,6 +97,31 @@ func TestAppConfigARMStoreList(t *testing.T) {
 	}
 }
 
+func TestAppConfigARMStoreListKeys(t *testing.T) {
+	ts := setupServer()
+	defer ts.Close()
+	base := appConfigARMBase(ts) + "/" + appConfigStore
+
+	doRequest(t, "PUT", base, `{"location":"eastus","sku":{"name":"free"}}`).Body.Close()
+
+	resp := doRequest(t, "POST", base+"/listKeys?api-version=2024-05-01", "")
+	defer resp.Body.Close()
+	expectStatus(t, resp, 200)
+
+	m := decodeJSON(t, resp)
+	items := m["value"].([]interface{})
+	if len(items) != 2 {
+		t.Fatalf("expected two keys, got %d", len(items))
+	}
+	primary := items[0].(map[string]interface{})
+	if primary["id"] != "primary" || primary["name"] != "Primary" || primary["value"] != "miniblue-primary-key" {
+		t.Fatalf("expected primary placeholder key, got %v", primary)
+	}
+	if !strings.Contains(primary["connectionString"].(string), "Endpoint=https://"+appConfigStore+".azconfig.io") {
+		t.Fatalf("expected endpoint in connection string, got %v", primary["connectionString"])
+	}
+}
+
 func TestAppConfigARMStoreNotFound(t *testing.T) {
 	ts := setupServer()
 	defer ts.Close()
