@@ -147,6 +147,10 @@ Examples:
   azlocal storage account list-keys --resource-group myRG --name myaccount
   azlocal storage account delete --resource-group myRG --name myaccount
 
+  azlocal appconfig store create --resource-group myRG --name myconfig --sku free
+  azlocal appconfig store list --resource-group myRG
+  azlocal appconfig store list-keys --resource-group myRG --name myconfig
+
   azlocal storage container create --account myaccount --name mycontainer
   azlocal storage blob upload --account myaccount --container mycontainer --name hello.txt --data "Hello!"
   azlocal storage blob download --account myaccount --container mycontainer --name hello.txt
@@ -1198,12 +1202,20 @@ func handleServiceBus(args []string) {
 // --- App Config ---
 
 func handleAppConfig(args []string) {
-	if len(args) < 2 {
-		fmt.Println("Usage: azlocal appconfig kv <set|show|list|delete> [flags]")
+	if len(args) == 0 {
+		fmt.Println("Usage: azlocal appconfig <store|kv> <operation> [flags]")
+		return
+	}
+	if args[0] == "store" {
+		handleAppConfigStore(args[1:])
 		return
 	}
 	if args[0] != "kv" {
 		fmt.Fprintf(os.Stderr, "Unknown subcommand: appconfig %s\n", args[0])
+		return
+	}
+	if len(args) < 2 {
+		fmt.Println("Usage: azlocal appconfig kv <set|show|list|delete> [flags]")
 		return
 	}
 	store := requireFlag(args, "store")
@@ -1222,6 +1234,47 @@ func handleAppConfig(args []string) {
 	case "delete":
 		key := requireFlag(args, "key")
 		doDelete(base + "/" + key)
+	}
+}
+
+func handleAppConfigStore(args []string) {
+	if len(args) == 0 {
+		fmt.Println("Usage: azlocal appconfig store <create|list|show|delete|list-keys> [flags]")
+		return
+	}
+	rg := requireFlag(args, "resource-group")
+	base := "/subscriptions/" + sub(args) + "/resourceGroups/" + rg + "/providers/Microsoft.AppConfiguration/configurationStores"
+
+	switch args[0] {
+	case "create":
+		name := requireFlag(args, "name")
+		location := getFlag(args, "location")
+		if location == "" {
+			location = "eastus"
+		}
+		sku := getFlag(args, "sku")
+		if sku == "" {
+			sku = "free"
+		}
+		doPut(base+"/"+name, map[string]interface{}{
+			"location": location,
+			"sku": map[string]string{
+				"name": sku,
+			},
+		})
+	case "list":
+		doGet(base)
+	case "show":
+		name := requireFlag(args, "name")
+		doGet(base + "/" + name)
+	case "delete":
+		name := requireFlag(args, "name")
+		doDelete(base + "/" + name)
+	case "list-keys":
+		name := requireFlag(args, "name")
+		doPost(base+"/"+name+"/listKeys", nil)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown subcommand: appconfig store %s\n", args[0])
 	}
 }
 
