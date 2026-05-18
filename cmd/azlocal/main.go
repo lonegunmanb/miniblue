@@ -164,6 +164,20 @@ Examples:
   azlocal network vnet subnet list   --resource-group myRG --vnet-name myvnet
   azlocal network vnet subnet show   --resource-group myRG --vnet-name myvnet --name mysubnet
   azlocal network vnet subnet delete --resource-group myRG --vnet-name myvnet --name mysubnet
+  azlocal network nsg create --resource-group myRG --name mynsg
+  azlocal network nsg list   --resource-group myRG
+  azlocal network nsg show   --resource-group myRG --name mynsg
+  azlocal network nsg rule list --resource-group myRG --nsg-name mynsg
+  azlocal network lb create  --resource-group myRG --name mylb --sku Standard
+  azlocal network lb list    --resource-group myRG
+  azlocal network lb show    --resource-group myRG --name mylb
+  azlocal network lb rule list  --resource-group myRG --lb-name mylb
+  azlocal network lb probe list --resource-group myRG --lb-name mylb
+
+  azlocal cosmosdb create --resource-group myRG --name myaccount --location eastus
+  azlocal cosmosdb list   --resource-group myRG
+  azlocal cosmosdb show   --resource-group myRG --name myaccount
+  azlocal cosmosdb delete --resource-group myRG --name myaccount
 
   azlocal vm create --resource-group myRG --name myvm --image Ubuntu2204 --size Standard_B1s
   azlocal vm list --resource-group myRG
@@ -704,9 +718,22 @@ func handleNetwork(args []string) {
 	if len(args) < 2 {
 		fmt.Println("Usage: azlocal network vnet <create|show|list|delete> [flags]")
 		fmt.Println("       azlocal network vnet subnet <create|show|list|delete|update> [flags]")
+		fmt.Println("       azlocal network nsg <create|show|list|delete> [flags]")
+		fmt.Println("       azlocal network nsg rule <create|show|list|delete> [flags]")
+		fmt.Println("       azlocal network lb <create|show|list|delete> [flags]")
+		fmt.Println("       azlocal network lb rule|probe <list|show> [flags]")
 		return
 	}
-	if args[0] != "vnet" {
+	switch args[0] {
+	case "nsg":
+		handleNetworkNSG(args[1:])
+		return
+	case "lb":
+		handleNetworkLB(args[1:])
+		return
+	case "vnet":
+		// handled below
+	default:
 		fmt.Fprintf(os.Stderr, "Unknown subcommand: network %s\n", args[0])
 		os.Exit(1)
 	}
@@ -797,7 +824,156 @@ func handleNetworkSubnet(args []string) {
 	}
 }
 
-// --- Virtual Machines ---
+// handleNetworkNSG implements `azlocal network nsg <action>`,
+// mirroring upstream `az network nsg`. The `rule` subgroup is dispatched
+// to handleNetworkNSGRule because it uses --nsg-name (not --name) to
+// identify the parent NSG.
+func handleNetworkNSG(args []string) {
+	if len(args) == 0 {
+		fmt.Println("Usage: azlocal network nsg <create|show|list|delete> [flags]")
+		fmt.Println("       azlocal network nsg rule <create|show|list|delete> [flags]")
+		return
+	}
+	if args[0] == "rule" {
+		handleNetworkNSGRule(args[1:])
+		return
+	}
+
+	rg := requireFlag(args, "resource-group")
+	s := sub(args)
+	base := "/subscriptions/" + s + "/resourceGroups/" + rg +
+		"/providers/Microsoft.Network/networkSecurityGroups"
+
+	switch args[0] {
+	case "create":
+		name := requireFlag(args, "name")
+		body := map[string]interface{}{
+			"location":   getFlag(args, "location"),
+			"properties": map[string]interface{}{},
+		}
+		doPut(base+"/"+name, body)
+	case "show":
+		name := requireFlag(args, "name")
+		doGet(base + "/" + name)
+	case "list":
+		doGet(base)
+	case "delete":
+		name := requireFlag(args, "name")
+		doDelete(base + "/" + name)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown subcommand: network nsg %s\n", args[0])
+		os.Exit(1)
+	}
+}
+
+// handleNetworkNSGRule implements `azlocal network nsg rule <action>`,
+// mirroring upstream `az network nsg rule` flag names.
+func handleNetworkNSGRule(args []string) {
+	if len(args) == 0 {
+		fmt.Println("Usage: azlocal network nsg rule <create|show|list|delete> [flags]")
+		return
+	}
+	rg := requireFlag(args, "resource-group")
+	nsg := requireFlag(args, "nsg-name")
+	s := sub(args)
+	base := "/subscriptions/" + s + "/resourceGroups/" + rg +
+		"/providers/Microsoft.Network/networkSecurityGroups/" + nsg + "/securityRules"
+
+	switch args[0] {
+	case "create":
+		name := requireFlag(args, "name")
+		doPut(base+"/"+name, map[string]interface{}{
+			"properties": map[string]interface{}{},
+		})
+	case "show":
+		name := requireFlag(args, "name")
+		doGet(base + "/" + name)
+	case "list":
+		doGet(base)
+	case "delete":
+		name := requireFlag(args, "name")
+		doDelete(base + "/" + name)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown subcommand: network nsg rule %s\n", args[0])
+		os.Exit(1)
+	}
+}
+
+// handleNetworkLB implements `azlocal network lb <action>`, mirroring
+// upstream `az network lb`. The `rule` and `probe` subgroups use
+// --lb-name (not --name) to identify the parent load balancer, so they
+// are dispatched separately.
+func handleNetworkLB(args []string) {
+	if len(args) == 0 {
+		fmt.Println("Usage: azlocal network lb <create|show|list|delete> [flags]")
+		fmt.Println("       azlocal network lb rule|probe <list|show> [flags]")
+		return
+	}
+	switch args[0] {
+	case "rule":
+		handleNetworkLBChild(args[1:], "loadBalancingRules", "network lb rule")
+		return
+	case "probe":
+		handleNetworkLBChild(args[1:], "probes", "network lb probe")
+		return
+	}
+
+	rg := requireFlag(args, "resource-group")
+	s := sub(args)
+	base := "/subscriptions/" + s + "/resourceGroups/" + rg +
+		"/providers/Microsoft.Network/loadBalancers"
+
+	switch args[0] {
+	case "create":
+		name := requireFlag(args, "name")
+		body := map[string]interface{}{
+			"location":   getFlag(args, "location"),
+			"properties": map[string]interface{}{},
+		}
+		if sku := getFlag(args, "sku"); sku != "" {
+			body["sku"] = map[string]string{"name": sku}
+		}
+		doPut(base+"/"+name, body)
+	case "show":
+		name := requireFlag(args, "name")
+		doGet(base + "/" + name)
+	case "list":
+		doGet(base)
+	case "delete":
+		name := requireFlag(args, "name")
+		doDelete(base + "/" + name)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown subcommand: network lb %s\n", args[0])
+		os.Exit(1)
+	}
+}
+
+// handleNetworkLBChild implements the `rule` and `probe` LB subgroups,
+// which both follow the same {sub-path}/{name} pattern under the parent LB.
+func handleNetworkLBChild(args []string, subPath, label string) {
+	if len(args) == 0 {
+		fmt.Printf("Usage: azlocal %s <list|show> [flags]\n", label)
+		return
+	}
+	rg := requireFlag(args, "resource-group")
+	lb := requireFlag(args, "lb-name")
+	s := sub(args)
+	base := "/subscriptions/" + s + "/resourceGroups/" + rg +
+		"/providers/Microsoft.Network/loadBalancers/" + lb + "/" + subPath
+
+	switch args[0] {
+	case "list":
+		doGet(base)
+	case "show":
+		name := requireFlag(args, "name")
+		doGet(base + "/" + name)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown subcommand: %s %s\n", label, args[0])
+		os.Exit(1)
+	}
+}
+
+
 
 func handleVM(args []string) {
 	if len(args) == 0 {
@@ -1003,6 +1179,7 @@ func buildVMExtensionBody(args []string) map[string]interface{} {
 func handleCosmosDB(args []string) {
 	if len(args) == 0 {
 		fmt.Println(`Usage:
+  azlocal cosmosdb <create|show|list|delete> [flags]
   azlocal cosmosdb doc <create|show|list|delete> [flags]
   azlocal cosmosdb table <create|show|list|delete> [flags]
   azlocal cosmosdb table throughput <show|update> [flags]`)
@@ -1013,9 +1190,41 @@ func handleCosmosDB(args []string) {
 		handleCosmosDBDoc(args[1:])
 	case "table":
 		handleCosmosDBTable(args[1:])
+	case "create", "show", "list", "delete":
+		handleCosmosDBAccount(args)
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown subcommand: cosmosdb %s\n", args[0])
-		return
+		os.Exit(1)
+	}
+}
+
+// handleCosmosDBAccount implements account-level `azlocal cosmosdb
+// <create|show|list|delete>`, mirroring upstream `az cosmosdb`.
+func handleCosmosDBAccount(args []string) {
+	rg := requireFlag(args, "resource-group")
+	s := sub(args)
+	base := "/subscriptions/" + s + "/resourceGroups/" + rg +
+		"/providers/Microsoft.DocumentDB/databaseAccounts"
+
+	switch args[0] {
+	case "create":
+		name := requireFlag(args, "name")
+		body := map[string]interface{}{
+			"location":   getFlag(args, "location"),
+			"properties": map[string]interface{}{},
+		}
+		if kind := getFlag(args, "kind"); kind != "" {
+			body["kind"] = kind
+		}
+		doPut(base+"/"+name, body)
+	case "show":
+		name := requireFlag(args, "name")
+		doGet(base + "/" + name)
+	case "list":
+		doGet(base)
+	case "delete":
+		name := requireFlag(args, "name")
+		doDelete(base + "/" + name)
 	}
 }
 
