@@ -155,6 +155,9 @@ func (h *Handler) buildStoreResponse(sub, rg, name string, body map[string]inter
 	if properties == nil {
 		properties = map[string]interface{}{}
 	}
+	if encryption, ok := properties["encryption"].(map[string]interface{}); ok && len(encryption) == 0 {
+		delete(properties, "encryption")
+	}
 	properties["provisioningState"] = "Succeeded"
 	properties["endpoint"] = "https://" + name + ".azconfig.io"
 	if _, ok := properties["creationDate"]; !ok {

@@ -162,30 +162,56 @@ func accountArrayProperty(props map[string]interface{}, key string) interface{} 
 
 func (h *Handler) buildAccountResponse(sub, rg, name string, input map[string]interface{}) map[string]interface{} {
 	props, _ := input["properties"].(map[string]interface{})
-
-	return map[string]interface{}{
-		"id":       "/subscriptions/" + sub + "/resourceGroups/" + rg + "/providers/Microsoft.DocumentDB/databaseAccounts/" + name,
-		"name":     name,
-		"type":     "Microsoft.DocumentDB/databaseAccounts",
-		"location": "eastus",
-		"kind":     "GlobalDocumentDB",
-		"properties": map[string]interface{}{
-			"provisioningState":        "Succeeded",
-			"documentEndpoint":         "https://" + name + ".documents.azure.com:443/",
-			"databaseAccountOfferType": "Standard",
-			"consistencyPolicy": map[string]interface{}{
-				"defaultConsistencyLevel": "Session",
-			},
-			"locations": []map[string]interface{}{
-				{"locationName": "East US", "failoverPriority": 0, "isZoneRedundant": false},
-			},
-			"capabilities":                accountArrayProperty(props, "capabilities"),
-			"ipRules":                     accountArrayProperty(props, "ipRules"),
-			"virtualNetworkRules":         accountArrayProperty(props, "virtualNetworkRules"),
-			"cors":                        accountArrayProperty(props, "cors"),
-			"networkAclBypassResourceIds": accountArrayProperty(props, "networkAclBypassResourceIds"),
-		},
+	location, _ := input["location"].(string)
+	if location == "" {
+		location = "eastus"
 	}
+	kind, _ := input["kind"].(string)
+	if kind == "" {
+		kind = "GlobalDocumentDB"
+	}
+
+	responseProps := map[string]interface{}{
+		"provisioningState":        "Succeeded",
+		"documentEndpoint":         "https://" + name + ".documents.azure.com:443/",
+		"databaseAccountOfferType": "Standard",
+		"consistencyPolicy": map[string]interface{}{
+			"defaultConsistencyLevel": "Session",
+		},
+		"locations": []map[string]interface{}{
+			{"locationName": "East US", "failoverPriority": 0, "isZoneRedundant": false},
+		},
+		"capabilities":                accountArrayProperty(props, "capabilities"),
+		"ipRules":                     accountArrayProperty(props, "ipRules"),
+		"virtualNetworkRules":         accountArrayProperty(props, "virtualNetworkRules"),
+		"cors":                        accountArrayProperty(props, "cors"),
+		"networkAclBypassResourceIds": accountArrayProperty(props, "networkAclBypassResourceIds"),
+	}
+	for _, key := range []string{
+		"databaseAccountOfferType",
+		"consistencyPolicy",
+		"locations",
+		"publicNetworkAccess",
+		"minimalTlsVersion",
+		"minimumTlsVersion",
+	} {
+		if v, ok := props[key]; ok {
+			responseProps[key] = v
+		}
+	}
+
+	acct := map[string]interface{}{
+		"id":         "/subscriptions/" + sub + "/resourceGroups/" + rg + "/providers/Microsoft.DocumentDB/databaseAccounts/" + name,
+		"name":       name,
+		"type":       "Microsoft.DocumentDB/databaseAccounts",
+		"location":   location,
+		"kind":       kind,
+		"properties": responseProps,
+	}
+	if tags, ok := input["tags"]; ok {
+		acct["tags"] = tags
+	}
+	return acct
 }
 
 func (h *Handler) CreateOrUpdateAccount(w http.ResponseWriter, r *http.Request) {

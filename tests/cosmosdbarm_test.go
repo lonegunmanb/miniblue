@@ -118,6 +118,50 @@ func TestCosmosDBARMAccountCapabilitiesRoundTrip(t *testing.T) {
 	}
 }
 
+func TestCosmosDBARMAccountPlanDriftFieldsRoundTrip(t *testing.T) {
+	ts := setupServer()
+	defer ts.Close()
+	base := cosmosARMBase(ts) + "/" + cosmosAcct
+	body := `{
+		"location":"eastus",
+		"kind":"GlobalDocumentDB",
+		"tags":{"Name":"drift-repro-cosmos"},
+		"properties":{
+			"databaseAccountOfferType":"Standard",
+			"consistencyPolicy":{"defaultConsistencyLevel":"Session"},
+			"locations":[{"locationName":"eastus","failoverPriority":0}],
+			"publicNetworkAccess":"Disabled",
+			"capabilities":[{"name":"EnableTable"}]
+		}
+	}`
+
+	resp := doRequest(t, "PUT", base, body)
+	resp.Body.Close()
+	expectStatus(t, resp, 200)
+
+	resp = doRequest(t, "GET", base, "")
+	defer resp.Body.Close()
+	expectStatus(t, resp, 200)
+
+	m := decodeJSON(t, resp)
+	tags := m["tags"].(map[string]interface{})
+	if tags["Name"] != "drift-repro-cosmos" {
+		t.Fatalf("expected tags to round trip, got %v", tags)
+	}
+	props := m["properties"].(map[string]interface{})
+	locations := props["locations"].([]interface{})
+	location := locations[0].(map[string]interface{})
+	if location["locationName"] != "eastus" || location["failoverPriority"] != float64(0) {
+		t.Fatalf("expected locations to round trip, got %v", locations)
+	}
+	if props["publicNetworkAccess"] != "Disabled" {
+		t.Fatalf("expected publicNetworkAccess Disabled, got %v", props["publicNetworkAccess"])
+	}
+	if _, ok := props["minimumTlsVersion"]; ok {
+		t.Fatalf("did not expect minimumTlsVersion when omitted from PUT, got %v", props["minimumTlsVersion"])
+	}
+}
+
 func TestCosmosDBARMAccountList(t *testing.T) {
 	ts := setupServer()
 	defer ts.Close()

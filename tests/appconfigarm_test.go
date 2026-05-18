@@ -78,6 +78,26 @@ func TestAppConfigARMStoreCRUD(t *testing.T) {
 	expectStatus(t, resp3, 200)
 }
 
+func TestAppConfigARMStoreOmitsEmptyEncryption(t *testing.T) {
+	ts := setupServer()
+	defer ts.Close()
+	base := appConfigARMBase(ts) + "/" + appConfigStore
+
+	resp := doRequest(t, "PUT", base, `{"location":"eastus","properties":{"encryption":{}}}`)
+	resp.Body.Close()
+	expectStatus(t, resp, 201)
+
+	resp = doRequest(t, "GET", base, "")
+	defer resp.Body.Close()
+	expectStatus(t, resp, 200)
+
+	m := decodeJSON(t, resp)
+	props := m["properties"].(map[string]interface{})
+	if _, ok := props["encryption"]; ok {
+		t.Fatalf("did not expect empty encryption in properties, got %v", props["encryption"])
+	}
+}
+
 func TestAppConfigARMStoreList(t *testing.T) {
 	ts := setupServer()
 	defer ts.Close()

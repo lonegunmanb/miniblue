@@ -206,18 +206,35 @@ func buildLoadBalancingRuleResponse(sub, rg, lb, name string, input map[string]i
 		props = map[string]interface{}{}
 	}
 
+	ruleProps := map[string]interface{}{
+		"provisioningState": "Succeeded",
+		"resourceGuid":      uuid.New().String(),
+		"protocol":          props["protocol"],
+		"frontendPort":      props["frontendPort"],
+		"backendPort":       props["backendPort"],
+	}
+	for _, key := range []string{
+		"frontendIPConfiguration",
+		"backendAddressPool",
+		"backendAddressPools",
+		"probe",
+		"disableOutboundSnat",
+		"enableFloatingIP",
+		"enableTcpReset",
+		"idleTimeoutInMinutes",
+		"loadDistribution",
+	} {
+		if v, ok := props[key]; ok {
+			ruleProps[key] = v
+		}
+	}
+
 	return map[string]interface{}{
-		"id":   id,
-		"name": name,
-		"type": "Microsoft.Network/loadBalancers/loadBalancingRules",
-		"etag": "W/\"miniblue\"",
-		"properties": map[string]interface{}{
-			"provisioningState": "Succeeded",
-			"resourceGuid":      uuid.New().String(),
-			"protocol":          props["protocol"],
-			"frontendPort":      props["frontendPort"],
-			"backendPort":       props["backendPort"],
-		},
+		"id":         id,
+		"name":       name,
+		"type":       "Microsoft.Network/loadBalancers/loadBalancingRules",
+		"etag":       "W/\"miniblue\"",
+		"properties": ruleProps,
 	}
 }
 
