@@ -743,3 +743,172 @@ func TestNetworkUnknownResource(t *testing.T) {
 		t.Fatalf("expected 'Unknown subcommand' in output, got: %s", out)
 	}
 }
+
+// --- network nsg ---
+
+func TestNetworkNSGCreateShowListDelete(t *testing.T) {
+	ts := setupMiniblue()
+	defer ts.Close()
+
+	createOut, _, code := runAzlocal(ts, "network", "nsg", "create",
+		"--resource-group", "myRG", "--name", "mynsg", "--location", "eastus")
+	if code != 0 {
+		t.Fatalf("nsg create failed: %s", createOut)
+	}
+	if !strings.Contains(createOut, "\"name\": \"mynsg\"") ||
+		!strings.Contains(createOut, "Microsoft.Network/networkSecurityGroups") {
+		t.Fatalf("expected nsg name and type in create output, got: %s", createOut)
+	}
+
+	showOut, _, _ := runAzlocal(ts, "network", "nsg", "show",
+		"--resource-group", "myRG", "--name", "mynsg")
+	if !strings.Contains(showOut, "\"name\": \"mynsg\"") {
+		t.Fatalf("expected nsg in show output, got: %s", showOut)
+	}
+
+	listOut, _, _ := runAzlocal(ts, "network", "nsg", "list",
+		"--resource-group", "myRG")
+	if !strings.Contains(listOut, "mynsg") {
+		t.Fatalf("expected nsg in list output, got: %s", listOut)
+	}
+
+	delOut, _, _ := runAzlocal(ts, "network", "nsg", "delete",
+		"--resource-group", "myRG", "--name", "mynsg")
+	if !strings.Contains(strings.ToLower(delOut), "deleted") {
+		t.Fatalf("expected delete confirmation, got: %s", delOut)
+	}
+}
+
+func TestNetworkNSGRuleListAndShow(t *testing.T) {
+	ts := setupMiniblue()
+	defer ts.Close()
+
+	runAzlocal(ts, "network", "nsg", "create",
+		"--resource-group", "myRG", "--name", "mynsg")
+
+	createOut, _, code := runAzlocal(ts, "network", "nsg", "rule", "create",
+		"--resource-group", "myRG", "--nsg-name", "mynsg", "--name", "allowSSH")
+	if code != 0 {
+		t.Fatalf("nsg rule create failed: %s", createOut)
+	}
+	if !strings.Contains(createOut, "allowSSH") {
+		t.Fatalf("expected rule name in create output, got: %s", createOut)
+	}
+
+	listOut, _, _ := runAzlocal(ts, "network", "nsg", "rule", "list",
+		"--resource-group", "myRG", "--nsg-name", "mynsg")
+	if !strings.Contains(listOut, "allowSSH") {
+		t.Fatalf("expected rule in list output, got: %s", listOut)
+	}
+}
+
+// --- network lb ---
+
+func TestNetworkLBCreateShowListDelete(t *testing.T) {
+	ts := setupMiniblue()
+	defer ts.Close()
+
+	createOut, _, code := runAzlocal(ts, "network", "lb", "create",
+		"--resource-group", "myRG", "--name", "mylb",
+		"--location", "eastus", "--sku", "Standard")
+	if code != 0 {
+		t.Fatalf("lb create failed: %s", createOut)
+	}
+	if !strings.Contains(createOut, "\"name\": \"mylb\"") ||
+		!strings.Contains(createOut, "Microsoft.Network/loadBalancers") {
+		t.Fatalf("expected lb name and type in create output, got: %s", createOut)
+	}
+
+	showOut, _, _ := runAzlocal(ts, "network", "lb", "show",
+		"--resource-group", "myRG", "--name", "mylb")
+	if !strings.Contains(showOut, "\"name\": \"mylb\"") {
+		t.Fatalf("expected lb in show output, got: %s", showOut)
+	}
+
+	listOut, _, _ := runAzlocal(ts, "network", "lb", "list",
+		"--resource-group", "myRG")
+	if !strings.Contains(listOut, "mylb") {
+		t.Fatalf("expected lb in list output, got: %s", listOut)
+	}
+
+	delOut, _, _ := runAzlocal(ts, "network", "lb", "delete",
+		"--resource-group", "myRG", "--name", "mylb")
+	if !strings.Contains(strings.ToLower(delOut), "deleted") {
+		t.Fatalf("expected delete confirmation, got: %s", delOut)
+	}
+}
+
+func TestNetworkLBRuleAndProbeList(t *testing.T) {
+	ts := setupMiniblue()
+	defer ts.Close()
+
+	runAzlocal(ts, "network", "lb", "create",
+		"--resource-group", "myRG", "--name", "mylb")
+
+	ruleListOut, _, code := runAzlocal(ts, "network", "lb", "rule", "list",
+		"--resource-group", "myRG", "--lb-name", "mylb")
+	if code != 0 {
+		t.Fatalf("lb rule list failed: %s", ruleListOut)
+	}
+	if !strings.Contains(ruleListOut, "value") {
+		t.Fatalf("expected value array in rule list output, got: %s", ruleListOut)
+	}
+
+	probeListOut, _, code := runAzlocal(ts, "network", "lb", "probe", "list",
+		"--resource-group", "myRG", "--lb-name", "mylb")
+	if code != 0 {
+		t.Fatalf("lb probe list failed: %s", probeListOut)
+	}
+	if !strings.Contains(probeListOut, "value") {
+		t.Fatalf("expected value array in probe list output, got: %s", probeListOut)
+	}
+}
+
+// --- cosmosdb account ---
+
+func TestCosmosDBAccountCreateShowListDelete(t *testing.T) {
+	ts := setupMiniblue()
+	defer ts.Close()
+
+	createOut, _, code := runAzlocal(ts, "cosmosdb", "create",
+		"--resource-group", "myRG", "--name", "myaccount", "--location", "eastus")
+	if code != 0 {
+		t.Fatalf("cosmosdb create failed: %s", createOut)
+	}
+	if !strings.Contains(createOut, "\"name\": \"myaccount\"") ||
+		!strings.Contains(createOut, "Microsoft.DocumentDB/databaseAccounts") {
+		t.Fatalf("expected account name and type in create output, got: %s", createOut)
+	}
+
+	showOut, _, _ := runAzlocal(ts, "cosmosdb", "show",
+		"--resource-group", "myRG", "--name", "myaccount")
+	if !strings.Contains(showOut, "\"name\": \"myaccount\"") {
+		t.Fatalf("expected account in show output, got: %s", showOut)
+	}
+
+	listOut, _, _ := runAzlocal(ts, "cosmosdb", "list",
+		"--resource-group", "myRG")
+	if !strings.Contains(listOut, "myaccount") {
+		t.Fatalf("expected account in list output, got: %s", listOut)
+	}
+
+	delOut, _, _ := runAzlocal(ts, "cosmosdb", "delete",
+		"--resource-group", "myRG", "--name", "myaccount")
+	if !strings.Contains(strings.ToLower(delOut), "deleted") {
+		t.Fatalf("expected delete confirmation, got: %s", delOut)
+	}
+}
+
+func TestCosmosDBUnknownSubcommand(t *testing.T) {
+	ts := setupMiniblue()
+	defer ts.Close()
+
+	out, _, code := runAzlocal(ts, "cosmosdb", "frobnicate")
+	if code == 0 {
+		t.Fatalf("expected non-zero exit for unknown cosmosdb subcommand, got 0; output: %s", out)
+	}
+	if !strings.Contains(out, "Unknown subcommand") {
+		t.Fatalf("expected 'Unknown subcommand' in output, got: %s", out)
+	}
+}
+
