@@ -45,6 +45,11 @@ func TestLoadBalancerLifecycle(t *testing.T) {
 	if len(frontends) != 1 {
 		t.Fatalf("expected 1 frontend, got %d", len(frontends))
 	}
+	frontend := frontends[0].(map[string]interface{})
+	expectedFrontendID := "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Network/loadBalancers/lb1/frontendIPConfigurations/frontend1"
+	if frontend["id"] != expectedFrontendID {
+		t.Fatalf("expected frontend id=%s, got %v", expectedFrontendID, frontend["id"])
+	}
 	backends := props["backendAddressPools"].([]interface{})
 	if len(backends) != 1 {
 		t.Fatalf("expected 1 backend pool, got %d", len(backends))

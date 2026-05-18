@@ -160,6 +160,68 @@ func accountArrayProperty(props map[string]interface{}, key string) interface{} 
 	return []interface{}{}
 }
 
+func accountLocationID(sub, rg, account, locationName string) string {
+	return "/subscriptions/" + sub + "/resourceGroups/" + rg + "/providers/Microsoft.DocumentDB/databaseAccounts/" + account + "/locations/" + locationName
+}
+
+func accountLocationsProperty(sub, rg, name, defaultLocation string, props map[string]interface{}) []interface{} {
+	raw, ok := props["locations"].([]interface{})
+	if !ok || len(raw) == 0 {
+		raw = []interface{}{
+			map[string]interface{}{
+				"locationName":     defaultLocation,
+				"failoverPriority": float64(0),
+				"isZoneRedundant":  false,
+			},
+		}
+	}
+
+	locations := make([]interface{}, 0, len(raw))
+	for _, item := range raw {
+		loc, ok := item.(map[string]interface{})
+		if !ok {
+			locations = append(locations, item)
+			continue
+		}
+
+		copy := make(map[string]interface{}, len(loc)+1)
+		for k, v := range loc {
+			copy[k] = v
+		}
+		locationName, _ := copy["locationName"].(string)
+		if locationName == "" {
+			locationName = defaultLocation
+			copy["locationName"] = locationName
+		}
+		if _, ok := copy["id"]; !ok {
+			copy["id"] = accountLocationID(sub, rg, name, locationName)
+		}
+		if _, ok := copy["isZoneRedundant"]; !ok {
+			copy["isZoneRedundant"] = false
+		}
+		locations = append(locations, copy)
+	}
+	return locations
+}
+
+func accountFailoverPolicies(locations []interface{}) []interface{} {
+	policies := make([]interface{}, 0, len(locations))
+	for _, item := range locations {
+		loc, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		policy := map[string]interface{}{}
+		for _, key := range []string{"id", "locationName", "failoverPriority"} {
+			if v, ok := loc[key]; ok {
+				policy[key] = v
+			}
+		}
+		policies = append(policies, policy)
+	}
+	return policies
+}
+
 func (h *Handler) buildAccountResponse(sub, rg, name string, input map[string]interface{}) map[string]interface{} {
 	props, _ := input["properties"].(map[string]interface{})
 	location, _ := input["location"].(string)
@@ -171,6 +233,7 @@ func (h *Handler) buildAccountResponse(sub, rg, name string, input map[string]in
 		kind = "GlobalDocumentDB"
 	}
 
+	locations := accountLocationsProperty(sub, rg, name, location, props)
 	responseProps := map[string]interface{}{
 		"provisioningState":        "Succeeded",
 		"documentEndpoint":         "https://" + name + ".documents.azure.com:443/",
@@ -178,9 +241,8 @@ func (h *Handler) buildAccountResponse(sub, rg, name string, input map[string]in
 		"consistencyPolicy": map[string]interface{}{
 			"defaultConsistencyLevel": "Session",
 		},
-		"locations": []map[string]interface{}{
-			{"locationName": "East US", "failoverPriority": 0, "isZoneRedundant": false},
-		},
+		"locations":                   locations,
+		"failoverPolicies":            accountFailoverPolicies(locations),
 		"capabilities":                accountArrayProperty(props, "capabilities"),
 		"ipRules":                     accountArrayProperty(props, "ipRules"),
 		"virtualNetworkRules":         accountArrayProperty(props, "virtualNetworkRules"),
@@ -190,7 +252,6 @@ func (h *Handler) buildAccountResponse(sub, rg, name string, input map[string]in
 	for _, key := range []string{
 		"databaseAccountOfferType",
 		"consistencyPolicy",
-		"locations",
 		"publicNetworkAccess",
 		"minimalTlsVersion",
 		"minimumTlsVersion",

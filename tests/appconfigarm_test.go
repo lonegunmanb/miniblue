@@ -98,6 +98,26 @@ func TestAppConfigARMStoreOmitsEmptyEncryption(t *testing.T) {
 	}
 }
 
+func TestAppConfigARMStoreOmitsEmptyKeyVaultEncryption(t *testing.T) {
+	ts := setupServer()
+	defer ts.Close()
+	base := appConfigARMBase(ts) + "/" + appConfigStore
+
+	resp := doRequest(t, "PUT", base, `{"location":"eastus","properties":{"encryption":{"keyVaultProperties":{}}}}`)
+	resp.Body.Close()
+	expectStatus(t, resp, 201)
+
+	resp = doRequest(t, "GET", base, "")
+	defer resp.Body.Close()
+	expectStatus(t, resp, 200)
+
+	m := decodeJSON(t, resp)
+	props := m["properties"].(map[string]interface{})
+	if _, ok := props["encryption"]; ok {
+		t.Fatalf("did not expect empty keyVaultProperties encryption in properties, got %v", props["encryption"])
+	}
+}
+
 func TestAppConfigARMStoreList(t *testing.T) {
 	ts := setupServer()
 	defer ts.Close()
