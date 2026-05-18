@@ -151,8 +151,16 @@ func TestCosmosDBARMAccountPlanDriftFieldsRoundTrip(t *testing.T) {
 	props := m["properties"].(map[string]interface{})
 	locations := props["locations"].([]interface{})
 	location := locations[0].(map[string]interface{})
-	if location["locationName"] != "eastus" || location["failoverPriority"] != float64(0) {
+	if location["locationName"] != "eastus" || location["failoverPriority"] != float64(0) || location["isZoneRedundant"] != false {
 		t.Fatalf("expected locations to round trip, got %v", locations)
+	}
+	if location["id"] == "" {
+		t.Fatalf("expected location id, got %v", location)
+	}
+	policies := props["failoverPolicies"].([]interface{})
+	policy := policies[0].(map[string]interface{})
+	if policy["locationName"] != "eastus" || policy["failoverPriority"] != float64(0) || policy["id"] != location["id"] {
+		t.Fatalf("expected failover policies to match locations, got %v", policies)
 	}
 	if props["publicNetworkAccess"] != "Disabled" {
 		t.Fatalf("expected publicNetworkAccess Disabled, got %v", props["publicNetworkAccess"])

@@ -155,7 +155,7 @@ func (h *Handler) buildStoreResponse(sub, rg, name string, body map[string]inter
 	if properties == nil {
 		properties = map[string]interface{}{}
 	}
-	if encryption, ok := properties["encryption"].(map[string]interface{}); ok && len(encryption) == 0 {
+	if encryption, ok := properties["encryption"].(map[string]interface{}); ok && isEmptyEncryption(encryption) {
 		delete(properties, "encryption")
 	}
 	properties["provisioningState"] = "Succeeded"
@@ -179,6 +179,17 @@ func (h *Handler) buildStoreResponse(sub, rg, name string, body map[string]inter
 		store["tags"] = tags
 	}
 	return store
+}
+
+func isEmptyEncryption(encryption map[string]interface{}) bool {
+	if len(encryption) == 0 {
+		return true
+	}
+	if len(encryption) != 1 {
+		return false
+	}
+	keyVaultProperties, ok := encryption["keyVaultProperties"].(map[string]interface{})
+	return ok && len(keyVaultProperties) == 0
 }
 
 func (h *Handler) CreateOrUpdateStore(w http.ResponseWriter, r *http.Request) {

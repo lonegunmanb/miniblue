@@ -86,6 +86,33 @@ func getArray(props map[string]interface{}, field string) []interface{} {
 	return []interface{}{}
 }
 
+func frontendIPConfigurations(id string, props map[string]interface{}) []interface{} {
+	raw := getArray(props, "frontendIPConfigurations")
+	configs := make([]interface{}, 0, len(raw))
+	for _, item := range raw {
+		config, ok := item.(map[string]interface{})
+		if !ok {
+			configs = append(configs, item)
+			continue
+		}
+		copy := make(map[string]interface{}, len(config)+2)
+		for k, v := range config {
+			copy[k] = v
+		}
+		name, _ := copy["name"].(string)
+		if name != "" {
+			if _, ok := copy["id"]; !ok {
+				copy["id"] = id + "/frontendIPConfigurations/" + name
+			}
+			if _, ok := copy["type"]; !ok {
+				copy["type"] = "Microsoft.Network/loadBalancers/frontendIPConfigurations"
+			}
+		}
+		configs = append(configs, copy)
+	}
+	return configs
+}
+
 // func getMap(props map[string]interface{}, field string) map[string]interface{} {
 // 	if v, ok := props[field].(map[string]interface{}); ok {
 // 		return v
@@ -127,7 +154,7 @@ func buildResponse(sub, rg, name string, input map[string]interface{}) map[strin
 		"properties": map[string]interface{}{
 			"provisioningState":        "Succeeded",
 			"resourceGuid":             uuid.New().String(),
-			"frontendIPConfigurations": getArray(props, "frontendIPConfigurations"),
+			"frontendIPConfigurations": frontendIPConfigurations(id, props),
 			"backendAddressPools":      getArray(props, "backendAddressPools"),
 			"loadBalancingRules":       getArray(props, "loadBalancingRules"),
 			"probes":                   getArray(props, "probes"),
