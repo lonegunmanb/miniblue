@@ -244,6 +244,11 @@ func (t *routeTrie) match(segs []string, out *[]string, pairs *[][2]string) bool
 func CaseInsensitiveARM(trie *routeTrie) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if isBlobDataPlanePath(r.URL.Path) {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			res := trie.normalize(r.URL.Path)
 
 			if res.matched && res.rewrittenPath != r.URL.Path {
@@ -267,6 +272,11 @@ func CaseInsensitiveARM(trie *routeTrie) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func isBlobDataPlanePath(path string) bool {
+	parts := splitPath(path)
+	return len(parts) > 0 && strings.EqualFold(parts[0], "blob")
 }
 
 // ----- response writer wrapper -----

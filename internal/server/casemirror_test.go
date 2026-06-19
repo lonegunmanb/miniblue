@@ -192,6 +192,21 @@ func TestMiddleware_NoRewriteWhenAlreadyCanonical(t *testing.T) {
 	}
 }
 
+func TestMiddleware_DoesNotNormalizeBlobDataPlanePath(t *testing.T) {
+	r := chi.NewRouter()
+	r.Get("/blob/{accountName}", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	h := CaseInsensitiveARM(BuildRouteTrie(r))(r)
+
+	req := httptest.NewRequest(http.MethodGet, "/Blob/acct?comp=properties&restype=service", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("Blob data-plane path was normalized; status=%d", rec.Code)
+	}
+}
+
 func TestMiddleware_PanicAllowsOuterRecover(t *testing.T) {
 	// If the handler panics before writing, the wrapper must not flush a
 	// premature WriteHeader so an outer recover middleware can write its own.

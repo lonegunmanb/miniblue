@@ -284,6 +284,42 @@ func TestBlobDataPlaneSharedKeyServiceProperties(t *testing.T) {
 	}
 }
 
+func TestBlobDataPlaneSharedKeyPrefixOverlappingAccounts(t *testing.T) {
+	ts := setupServer()
+	defer ts.Close()
+
+	for _, acct := range []string{"medialogs", "mediadata"} {
+		resp := doRequest(t, "PUT", blobARMBase(ts)+"/"+acct, `{}`)
+		resp.Body.Close()
+		expectStatus(t, resp, 200)
+
+		keyB64 := storageauth.DeterministicAccountKey(blobSub, blobRG, acct, "1")
+		key, err := base64.StdEncoding.DecodeString(keyB64)
+		if err != nil {
+			t.Fatal(err)
+		}
+		u := ts.URL + "/blob/" + acct + "?comp=properties&restype=service"
+		req, err := http.NewRequest(http.MethodGet, u, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("x-ms-date", time.Now().UTC().Format(http.TimeFormat))
+		req.Header.Set("x-ms-version", "2020-10-02")
+		if err := storageauth.SignBlobSharedKey(req, acct, key, false); err != nil {
+			t.Fatal(err)
+		}
+		probe, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(probe.Body)
+		probe.Body.Close()
+		if probe.StatusCode != http.StatusOK {
+			t.Fatalf("%s probe status=%d body=%s", acct, probe.StatusCode, body)
+		}
+	}
+}
+
 func TestBlobDataPlaneSharedKeyListContainers(t *testing.T) {
 	ts := setupServer()
 	defer ts.Close()
