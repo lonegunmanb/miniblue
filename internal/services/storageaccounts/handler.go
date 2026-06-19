@@ -109,12 +109,17 @@ func (h *Handler) DeleteStorageAccount(w http.ResponseWriter, r *http.Request) {
 	rg := chi.URLParam(r, "resourceGroupName")
 	name := chi.URLParam(r, "accountName")
 
+	// Delete Storage Account is a synchronous operation in the real Azure
+	// Storage RP: it returns 200 OK when the account existed and was deleted,
+	// or 204 No Content when it did not. Returning a bare 202 Accepted (with no
+	// body and no Azure-AsyncOperation/Location poll URL) makes the azurerm
+	// provider / Go SDK fail with "unexpected status 202 received with no body".
 	if !h.store.Delete(h.storageAccountKey(sub, rg, name)) {
-		azerr.NotFound(w, "Microsoft.Storage/storageAccounts", name)
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	storageauth.DeleteSharedKeyContext(h.store, name)
-	w.WriteHeader(http.StatusAccepted)
+	w.WriteHeader(http.StatusOK)
 }
 
 // ListKeys implements POST .../storageAccounts/{accountName}/listKeys (Azure Storage RP).
