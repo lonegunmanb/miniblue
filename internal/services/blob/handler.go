@@ -34,6 +34,30 @@ type Handler struct {
 	leases *leaseManager
 }
 
+func blobHTTPTime(v string) string {
+	if v == "" {
+		return time.Now().UTC().Format(http.TimeFormat)
+	}
+	if t, err := http.ParseTime(v); err == nil {
+		return t.UTC().Format(http.TimeFormat)
+	}
+	if t, err := time.Parse(time.RFC1123, v); err == nil {
+		return t.UTC().Format(http.TimeFormat)
+	}
+	return v
+}
+
+func blobLastModified(b Blob) string {
+	return blobHTTPTime(b.Properties["lastModified"])
+}
+
+func blobCreationTime(b Blob) string {
+	if v := b.Properties["creationTime"]; v != "" {
+		return blobHTTPTime(v)
+	}
+	return blobLastModified(b)
+}
+
 func NewHandler(s *store.Store) *Handler {
 	return &Handler{store: s, leases: newLeaseManager()}
 }
@@ -157,9 +181,9 @@ func (h *Handler) setBlobResponseHeaders(w http.ResponseWriter, r *http.Request)
 }
 
 type enumerationResults struct {
-	XMLName          xml.Name        `xml:"EnumerationResults"`
-	ServiceEndpoint  string          `xml:"ServiceEndpoint,attr"`
-	Containers       containersBlock `xml:"Containers"`
+	XMLName         xml.Name        `xml:"EnumerationResults"`
+	ServiceEndpoint string          `xml:"ServiceEndpoint,attr"`
+	Containers      containersBlock `xml:"Containers"`
 }
 
 type containersBlock struct {
@@ -433,13 +457,16 @@ func (h *Handler) UploadBlob(w http.ResponseWriter, r *http.Request) {
 	if ct == "" {
 		ct = "application/octet-stream"
 	}
+	now := time.Now().UTC()
+	httpTime := now.Format(http.TimeFormat)
 	b := Blob{
 		Name: blobName,
 		Properties: map[string]string{
-			"lastModified":  time.Now().UTC().Format(time.RFC1123),
+			"creationTime":  httpTime,
+			"lastModified":  httpTime,
 			"contentLength": fmt.Sprintf("%d", len(data)),
 			"contentType":   ct,
-			"etag":          fmt.Sprintf("\"0x%X\"", time.Now().UnixNano()),
+			"etag":          fmt.Sprintf("\"0x%X\"", now.UnixNano()),
 		},
 		Content: data,
 	}
@@ -470,7 +497,7 @@ func (h *Handler) UploadBlob(w http.ResponseWriter, r *http.Request) {
 	}
 	h.store.Set(h.blobKey(account, container, blobName), b)
 	w.Header().Set("ETag", b.Properties["etag"])
-	w.Header().Set("Last-Modified", time.Now().UTC().Format(http.TimeFormat))
+	w.Header().Set("Last-Modified", b.Properties["lastModified"])
 	w.Header().Set("x-ms-request-id", uuid.New().String())
 	w.WriteHeader(http.StatusCreated)
 }
@@ -634,7 +661,8 @@ func (h *Handler) DownloadBlob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", b.Properties["contentType"])
 	w.Header().Set("Content-Length", b.Properties["contentLength"])
 	w.Header().Set("ETag", b.Properties["etag"])
-	w.Header().Set("Last-Modified", time.Now().UTC().Format(http.TimeFormat))
+	w.Header().Set("Last-Modified", blobLastModified(b))
+	w.Header().Set("x-ms-creation-time", blobCreationTime(b))
 	w.Header().Set("x-ms-blob-type", "BlockBlob")
 	w.Header().Set("x-ms-request-id", uuid.New().String())
 	h.applyLeaseHeaders(w, account, container, blobName)
@@ -660,9 +688,11 @@ func (h *Handler) HeadBlob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", b.Properties["contentType"])
 	w.Header().Set("Content-Length", b.Properties["contentLength"])
 	w.Header().Set("ETag", b.Properties["etag"])
-	w.Header().Set("Last-Modified", time.Now().UTC().Format(http.TimeFormat))
+	w.Header().Set("Last-Modified", blobLastModified(b))
+	w.Header().Set("x-ms-creation-time", blobCreationTime(b))
 	w.Header().Set("x-ms-blob-type", "BlockBlob")
 	w.Header().Set("x-ms-request-id", uuid.New().String())
+	w.Header().Set("Connection", "close")
 	h.applyLeaseHeaders(w, account, container, blobName)
 	h.applyMetaHeaders(w, b)
 	h.applyContentHeaders(w, b)

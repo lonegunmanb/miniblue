@@ -171,6 +171,49 @@ func TestBlobNestedPath(t *testing.T) {
 	}
 }
 
+func TestBlobHeadEncodedPathCreationTime(t *testing.T) {
+	ts := setupServer()
+	defer ts.Close()
+	base := ts.URL + "/blob/myaccount/mycontainer"
+	encoded := base + "/.pulumi%2Fmeta.yaml"
+
+	doRequest(t, "PUT", base, "").Body.Close()
+
+	resp := doRequest(t, "PUT", encoded, "hello")
+	resp.Body.Close()
+	expectStatus(t, resp, 201)
+
+	resp = doRequest(t, "HEAD", encoded, "")
+	defer resp.Body.Close()
+	expectStatus(t, resp, 200)
+
+	if got := resp.Header.Get("Content-Length"); got != "5" {
+		t.Fatalf("expected Content-Length=5, got %q", got)
+	}
+	if got := resp.Header.Get("ETag"); got == "" {
+		t.Fatal("expected ETag header")
+	}
+	if got := resp.Header.Get("Last-Modified"); got == "" {
+		t.Fatal("expected Last-Modified header")
+	} else if _, err := http.ParseTime(got); err != nil {
+		t.Fatalf("expected parseable Last-Modified header, got %q: %v", got, err)
+	}
+	if got := resp.Header.Get("x-ms-creation-time"); got == "" {
+		t.Fatal("expected x-ms-creation-time header")
+	} else if _, err := http.ParseTime(got); err != nil {
+		t.Fatalf("expected parseable x-ms-creation-time header, got %q: %v", got, err)
+	}
+	if got := resp.Header.Get("x-ms-blob-type"); got != "BlockBlob" {
+		t.Fatalf("expected x-ms-blob-type=BlockBlob, got %q", got)
+	}
+	if got := resp.Header.Get("x-ms-request-id"); got == "" {
+		t.Fatal("expected x-ms-request-id header")
+	}
+	if !resp.Close {
+		t.Fatal("expected HEAD response to close cleanly")
+	}
+}
+
 // TestBlobNestedPathLease verifies that ?comp=lease on a nested blob path is
 // also routed to the blob service handler (handleLease) rather than the ARM
 // fallback. This is exactly the third request Terraform's azurerm backend
