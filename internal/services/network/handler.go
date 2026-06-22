@@ -233,6 +233,13 @@ func (h *Handler) CreateOrUpdateVNet(w http.ResponseWriter, r *http.Request) {
 	k := h.vnetKey(sub, rg, name)
 	_, exists := h.store.Get(k)
 	h.store.Set(k, vnet)
+	h.persistInlineSubnets(sub, rg, name, input)
+	h.updateVNetSubnets(sub, rg, name)
+	if updated, ok := h.store.Get(k); ok {
+		if updatedVNet, ok := updated.(map[string]interface{}); ok {
+			vnet = updatedVNet
+		}
+	}
 
 	if exists {
 		w.WriteHeader(http.StatusOK)
@@ -240,6 +247,31 @@ func (h *Handler) CreateOrUpdateVNet(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
 	}
 	json.NewEncoder(w).Encode(vnet)
+}
+
+func (h *Handler) persistInlineSubnets(sub, rg, vnetName string, input map[string]interface{}) {
+	props, _ := input["properties"].(map[string]interface{})
+	if props == nil {
+		return
+	}
+	rawSubnets, ok := props["subnets"].([]interface{})
+	if !ok {
+		return
+	}
+
+	h.store.DeleteByPrefix(h.subnetKey(sub, rg, vnetName, ""))
+	for _, rawSubnet := range rawSubnets {
+		subnetInput, ok := rawSubnet.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		subnetName, _ := subnetInput["name"].(string)
+		if subnetName == "" {
+			continue
+		}
+		subnet := buildSubnetResponse(sub, rg, vnetName, subnetName, subnetInput)
+		h.store.Set(h.subnetKey(sub, rg, vnetName, subnetName), subnet)
+	}
 }
 
 func (h *Handler) GetVNet(w http.ResponseWriter, r *http.Request) {

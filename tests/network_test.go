@@ -72,6 +72,14 @@ func TestVNetInlineSubnetsPersist(t *testing.T) {
 		t.Fatalf("expected subnet list to include 2 inline subnets, got %d", len(subnets))
 	}
 
+	resp = doRequest(t, "GET", base+"/inline-vnet/subnets/app"+av, "")
+	expectStatus(t, resp, 200)
+	m = decodeJSON(t, resp)
+	resp.Body.Close()
+	if got := m["name"]; got != "app" {
+		t.Fatalf("expected subnet GET name=app, got %v", got)
+	}
+
 	resp = doRequest(t, "GET", base+"/inline-vnet"+av, "")
 	expectStatus(t, resp, 200)
 	m = decodeJSON(t, resp)
