@@ -46,6 +46,54 @@ func TestVNetSubnetLifecycle(t *testing.T) {
 	expectStatus(t, resp, 404)
 }
 
+func TestVNetInlineSubnetsPersist(t *testing.T) {
+	ts := setupServer()
+	defer ts.Close()
+	base := ts.URL + "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Network/virtualNetworks"
+	av := "?api-version=2023-09-01"
+
+	resp := doRequest(t, "PUT", base+"/inline-vnet"+av,
+		`{"location":"eastus","properties":{"addressSpace":{"addressPrefixes":["10.60.0.0/16"]},"subnets":[{"name":"app","properties":{"addressPrefix":"10.60.1.0/24","addressPrefixes":["10.60.1.0/24"]}},{"name":"data","properties":{"addressPrefix":"10.60.2.0/24","addressPrefixes":["10.60.2.0/24"]}}]}}`)
+	expectStatus(t, resp, 201)
+	m := decodeJSON(t, resp)
+	resp.Body.Close()
+	props := m["properties"].(map[string]interface{})
+	subnets := props["subnets"].([]interface{})
+	if len(subnets) != 2 {
+		t.Fatalf("expected PUT response to include 2 inline subnets, got %d", len(subnets))
+	}
+
+	resp = doRequest(t, "GET", base+"/inline-vnet/subnets"+av, "")
+	expectStatus(t, resp, 200)
+	list := decodeJSON(t, resp)
+	resp.Body.Close()
+	subnets = list["value"].([]interface{})
+	if len(subnets) != 2 {
+		t.Fatalf("expected subnet list to include 2 inline subnets, got %d", len(subnets))
+	}
+
+	resp = doRequest(t, "GET", base+"/inline-vnet"+av, "")
+	expectStatus(t, resp, 200)
+	m = decodeJSON(t, resp)
+	resp.Body.Close()
+	props = m["properties"].(map[string]interface{})
+	subnets = props["subnets"].([]interface{})
+	if len(subnets) != 2 {
+		t.Fatalf("expected VNet GET to include 2 inline subnets, got %d", len(subnets))
+	}
+
+	names := map[string]bool{}
+	for _, item := range subnets {
+		subnet := item.(map[string]interface{})
+		names[subnet["name"].(string)] = true
+	}
+	for _, name := range []string{"app", "data"} {
+		if !names[name] {
+			t.Fatalf("expected subnet %q in VNet GET response, got %v", name, names)
+		}
+	}
+}
+
 func TestVNetPrivateEndpointVNetPoliciesRoundTrip(t *testing.T) {
 	ts := setupServer()
 	defer ts.Close()
