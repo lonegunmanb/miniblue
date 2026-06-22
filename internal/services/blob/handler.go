@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strconv"
@@ -258,10 +259,14 @@ func (h *Handler) blobKey(account, container, blob string) string {
 
 // blobNameParam extracts the blob name from the request URL. Blob names may
 // contain forward slashes, so the route uses a "/*" catch-all wildcard which
-// chi exposes via the "*" URL parameter. Returning the wildcard match
-// directly preserves nested paths like "env:/prod/terraform.tfstate".
+// chi exposes via the "*" URL parameter. Decoding it lets encoded slash paths
+// like ".pulumi%2Fmeta.yaml" map to the same blob as their decoded form.
 func blobNameParam(r *http.Request) string {
-	return chi.URLParam(r, "*")
+	name := chi.URLParam(r, "*")
+	if decoded, err := url.PathUnescape(name); err == nil {
+		return decoded
+	}
+	return name
 }
 
 func (h *Handler) CreateContainer(w http.ResponseWriter, r *http.Request) {
@@ -447,6 +452,11 @@ func (h *Handler) UploadBlob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if copySource := r.Header.Get("x-ms-copy-source"); copySource != "" {
+		h.copyBlob(w, r, account, container, blobName, copySource)
+		return
+	}
+
 	data, _ := io.ReadAll(r.Body)
 	// Per Put Blob spec, x-ms-blob-content-type takes precedence over
 	// the request's Content-Type header for the stored blob's content type.
@@ -500,6 +510,73 @@ func (h *Handler) UploadBlob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Last-Modified", b.Properties["lastModified"])
 	w.Header().Set("x-ms-request-id", uuid.New().String())
 	w.WriteHeader(http.StatusCreated)
+}
+
+func parseCopySource(source string) (account, container, blobName string, ok bool) {
+	u, err := url.Parse(source)
+	if err != nil {
+		return "", "", "", false
+	}
+	parts := strings.SplitN(strings.TrimPrefix(u.EscapedPath(), "/"), "/", 4)
+	if len(parts) != 4 || parts[0] != "blob" {
+		return "", "", "", false
+	}
+	account, err = url.PathUnescape(parts[1])
+	if err != nil {
+		return "", "", "", false
+	}
+	container, err = url.PathUnescape(parts[2])
+	if err != nil {
+		return "", "", "", false
+	}
+	blobName, err = url.PathUnescape(parts[3])
+	if err != nil {
+		return "", "", "", false
+	}
+	return account, container, blobName, true
+}
+
+func (h *Handler) copyBlob(w http.ResponseWriter, r *http.Request, account, container, blobName, source string) {
+	srcAccount, srcContainer, srcBlobName, ok := parseCopySource(source)
+	if !ok {
+		writeBlobLeaseError(w, http.StatusBadRequest, "InvalidHeaderValue", "The x-ms-copy-source header value is invalid.")
+		return
+	}
+	v, ok := h.store.Get(h.blobKey(srcAccount, srcContainer, srcBlobName))
+	if !ok {
+		writeBlobNotFound(w)
+		return
+	}
+	src := v.(Blob)
+
+	now := time.Now().UTC()
+	httpTime := now.Format(http.TimeFormat)
+	props := make(map[string]string, len(src.Properties)+2)
+	for k, v := range src.Properties {
+		props[k] = v
+	}
+	props["creationTime"] = httpTime
+	props["lastModified"] = httpTime
+	props["contentLength"] = fmt.Sprintf("%d", len(src.Content))
+	props["etag"] = fmt.Sprintf("\"0x%X\"", now.UnixNano())
+	props["copyID"] = uuid.New().String()
+	props["copyStatus"] = "success"
+
+	b := Blob{
+		Name:       blobName,
+		Properties: props,
+		Content:    append([]byte(nil), src.Content...),
+	}
+	h.store.Set(h.blobKey(account, container, blobName), b)
+
+	h.setBlobResponseHeaders(w, r)
+	w.Header().Set("ETag", b.Properties["etag"])
+	w.Header().Set("Last-Modified", b.Properties["lastModified"])
+	w.Header().Set("x-ms-request-id", uuid.New().String())
+	w.Header().Set("x-ms-copy-id", b.Properties["copyID"])
+	w.Header().Set("x-ms-copy-status", b.Properties["copyStatus"])
+	w.Header().Set("Content-Length", "0")
+	w.WriteHeader(http.StatusAccepted)
 }
 
 // setBlobMetadata implements PUT /{container}/{blob}?comp=metadata.
