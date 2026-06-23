@@ -104,6 +104,43 @@ func TestBlobListContentLength(t *testing.T) {
 	}
 }
 
+func TestBlobListDelimiterReturnsBlobPrefixForPulumiProjectStacks(t *testing.T) {
+	ts := setupServer()
+	defer ts.Close()
+	base := ts.URL + "/blob/myaccount/mycontainer"
+
+	doRequest(t, "PUT", base, "").Body.Close()
+	doRequest(t, "PUT", base+"/.pulumi/stacks/state-backends-azure/dev.json", "{}").Body.Close()
+	doRequest(t, "PUT", base+"/.pulumi/stacks/state-backends-azure/dev.json.bak", "{}").Body.Close()
+
+	resp := doRequest(t, "GET", base+"?restype=container&comp=list&prefix=.pulumi/stacks/&delimiter=/", "")
+	defer resp.Body.Close()
+	expectStatus(t, resp, 200)
+
+	var result struct {
+		Blobs struct {
+			Items []struct {
+				Name string `xml:"Name"`
+			} `xml:"Blob"`
+			Prefixes []struct {
+				Name string `xml:"Name"`
+			} `xml:"BlobPrefix"`
+		} `xml:"Blobs"`
+	}
+	if err := xml.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode XML response: %v", err)
+	}
+	if len(result.Blobs.Items) != 0 {
+		t.Fatalf("expected no blob entries at delimiter level, got %+v", result.Blobs.Items)
+	}
+	if len(result.Blobs.Prefixes) != 1 {
+		t.Fatalf("expected one BlobPrefix, got %d", len(result.Blobs.Prefixes))
+	}
+	if got, want := result.Blobs.Prefixes[0].Name, ".pulumi/stacks/state-backends-azure/"; got != want {
+		t.Fatalf("expected BlobPrefix %q, got %q", want, got)
+	}
+}
+
 func TestBlobNotFound(t *testing.T) {
 	ts := setupServer()
 	defer ts.Close()

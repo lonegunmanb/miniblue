@@ -308,12 +308,17 @@ type blobListEnumerationResults struct {
 }
 
 type blobsBlock struct {
-	Items []blobXML `xml:"Blob"`
+	Items    []blobXML       `xml:"Blob"`
+	Prefixes []blobPrefixXML `xml:"BlobPrefix"`
 }
 
 type blobXML struct {
 	Name       string       `xml:"Name"`
 	Properties blobPropsXML `xml:"Properties"`
+}
+
+type blobPrefixXML struct {
+	Name string `xml:"Name"`
 }
 
 type blobPropsXML struct {
@@ -376,7 +381,20 @@ func (h *Handler) ListBlobs(w http.ResponseWriter, r *http.Request) {
 		Blobs:           blobsBlock{Items: make([]blobXML, 0, len(blobs))},
 	}
 
+	seenPrefixes := map[string]bool{}
 	for _, b := range blobs {
+		if delimiter != "" {
+			remaining := strings.TrimPrefix(b.Name, reqPrefix)
+			if idx := strings.Index(remaining, delimiter); idx >= 0 {
+				prefixName := reqPrefix + remaining[:idx+len(delimiter)]
+				if !seenPrefixes[prefixName] {
+					res.Blobs.Prefixes = append(res.Blobs.Prefixes, blobPrefixXML{Name: prefixName})
+					seenPrefixes[prefixName] = true
+				}
+				continue
+			}
+		}
+
 		lastModified := b.Properties["lastModified"]
 		if lastModified == "" {
 			lastModified = time.Now().UTC().Format(http.TimeFormat)
